@@ -1,5 +1,6 @@
 STATIC_LINKING := 0
 AR             ?= ar
+EMULATORJS_THREADS ?= 0
 
 ifeq ($(platform),)
 platform = unix
@@ -213,6 +214,11 @@ else ifeq ($(platform), emscripten)
    TARGET := $(TARGET_NAME)_libretro_emscripten.bc
    fpic := -fPIC
    SHARED := -shared -Wl,--version-script=$(CORE_DIR)/link.T -Wl
+   ifeq ($(EMULATORJS_THREADS), 1)
+      LDFLAGS += -pthread
+      CFLAGS += -pthread
+      CXXFLAGS += -pthread
+   endif
 # RS90
 else ifeq ($(platform), rs90)
    TARGET := $(TARGET_NAME)_libretro.so
