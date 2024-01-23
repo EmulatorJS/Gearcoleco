@@ -214,6 +214,7 @@ else ifeq ($(platform), emscripten)
    TARGET := $(TARGET_NAME)_libretro_emscripten.bc
    fpic := -fPIC
    SHARED := -shared -Wl,--version-script=$(CORE_DIR)/link.T -Wl
+   STATIC_LINKING = 1
    ifeq ($(EMULATORJS_THREADS), 1)
       LDFLAGS += -pthread
       CFLAGS += -pthread
