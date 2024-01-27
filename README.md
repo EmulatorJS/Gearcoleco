@@ -4,6 +4,8 @@
 [![GitHub tag (with filter)](https://img.shields.io/github/v/tag/drhelius/Gearcoleco?label=version)](https://github.com/drhelius/Gearcoleco/releases)
 [![commits)](https://img.shields.io/github/commit-activity/t/drhelius/Gearcoleco)](https://github.com/drhelius/Gearcoleco/commits/main)
 [![GitHub contributors](https://img.shields.io/github/contributors/drhelius/Gearcoleco)](https://github.com/drhelius/Gearcoleco/graphs/contributors)
+[![Percentage of issues still open](http://isitmaintained.com/badge/open/drhelius/gearcoleco.svg)](http://isitmaintained.com/project/drhelius/gearcoleco "Percentage of issues still open")
+[![Average time to resolve an issue](http://isitmaintained.com/badge/resolution/drhelius/gearcoleco.svg)](http://isitmaintained.com/project/drhelius/gearcoleco "Average time to resolve an issue")
 [![GitHub Sponsors](https://img.shields.io/github/sponsors/drhelius)](https://github.com/sponsors/drhelius)
 [![GitHub](https://img.shields.io/github/license/drhelius/Gearcoleco)](https://github.com/drhelius/Gearcoleco/blob/main/LICENSE)
 [![Twitter Follow](https://img.shields.io/twitter/follow/drhelius)](https://twitter.com/drhelius)
@@ -76,7 +78,7 @@ make dist
 - Ubuntu / Debian / Raspberry Pi (Raspbian):
 
 ``` shell
-sudo apt-get install build-essential libsdl2-dev libglew-dev
+sudo apt-get install build-essential libsdl2-dev libglew-dev libgtk-3-dev
 cd platforms/linux
 make
 ```
@@ -84,7 +86,7 @@ make
 - Fedora:
 
 ``` shell
-sudo dnf install @development-tools gcc-c++ SDL2-devel glew-devel
+sudo dnf install @development-tools gcc-c++ SDL2-devel glew-devel gtk3-devel
 cd platforms/linux
 make
 ```
@@ -94,7 +96,7 @@ make
 - FreeBSD:
 
 ``` shell
-su root -c "pkg install -y git gmake pkgconf SDL2 glew lang/gcc"
+su root -c "pkg install -y git gmake pkgconf SDL2 glew lang/gcc gtk3"
 cd platforms/bsd
 gmake
 ```
@@ -102,7 +104,7 @@ gmake
 - NetBSD:
 
 ``` shell
-su root -c "pkgin install gmake pkgconf SDL2 glew lang/gcc"
+su root -c "pkgin install gmake pkgconf SDL2 glew lang/gcc gtk3"
 cd platforms/bsd
 gmake
 ```
