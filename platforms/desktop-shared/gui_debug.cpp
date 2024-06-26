@@ -19,7 +19,8 @@
 
 #include <math.h>
 #include "imgui/imgui.h"
-#include "imgui/imgui_memory_editor.h"
+#include "imgui/memory_editor.h"
+#include "imgui/colors.h"
 #include "config.h"
 #include "emu.h"
 #include "renderer.h"
@@ -45,18 +46,9 @@ struct DisassmeblerLine
     std::string symbol;
 };
 
-static MemoryEditor mem_edit;
-static ImVec4 cyan = ImVec4(0.1f,0.9f,0.9f,1.0f);
-static ImVec4 magenta = ImVec4(1.0f,0.502f,0.957f,1.0f);
-static ImVec4 yellow = ImVec4(1.0f,0.90f,0.05f,1.0f);
-static ImVec4 orange = ImVec4(0.992f,0.592f,0.122f,1.0f);
-static ImVec4 red = ImVec4(0.976f,0.149f,0.447f,1.0f);
-static ImVec4 green = ImVec4(0.1f,0.9f,0.1f,1.0f);
-static ImVec4 violet = ImVec4(0.682f,0.506f,1.0f,1.0f);
-static ImVec4 blue = ImVec4(0.2f,0.4f,1.0f,1.0f);
-static ImVec4 white = ImVec4(1.0f,1.0f,1.0f,1.0f);
-static ImVec4 gray = ImVec4(0.5f,0.5f,0.5f,1.0f);
-static ImVec4 dark_gray = ImVec4(0.1f,0.1f,0.1f,1.0f);
+static MemEditor mem_edit[5];
+static int mem_edit_select = -1;
+static int current_mem_edit = 0;
 static std::vector<DebugSymbol> symbols;
 static Memory::stDisassembleRecord* selected_record = NULL;
 static char brk_address_cpu[5] = "";
@@ -203,8 +195,68 @@ void gui_debug_go_back(void)
     goto_back_requested = true;
 }
 
+void gui_debug_copy_memory(void)
+{
+    int size = 0;
+    u8* data = NULL;
+    mem_edit[current_mem_edit].Copy(&data, &size);
+
+    if (IsValidPointer(data))
+    {
+        std::string text;
+
+        for (int i = 0; i < size; i++)
+        {
+            char byte[3];
+            sprintf(byte, "%02X", data[i]);
+            if (i > 0)
+                text += " ";
+            text += byte;
+        }
+
+        SDL_SetClipboardText(text.c_str());
+    }
+}
+
+void gui_debug_paste_memory(void)
+{
+    char* clipboard = SDL_GetClipboardText();
+
+    if (IsValidPointer(clipboard))
+    {
+        std::string text(clipboard);
+
+        text.erase(std::remove(text.begin(), text.end(), ' '), text.end());
+
+        size_t buffer_size = text.size() / 2;
+        u8* data = new u8[buffer_size];
+
+        for (size_t i = 0; i < buffer_size; i ++)
+        {
+            std::string byte = text.substr(i * 2, 2);
+
+            try
+            {
+                data[i] = (u8)std::stoul(byte, 0, 16);
+            }
+            catch(const std::invalid_argument&)
+            {
+                delete[] data;
+                return;
+            }
+        }
+
+        mem_edit[current_mem_edit].Paste(data, buffer_size);
+
+        delete[] data;
+    }
+
+    SDL_free(clipboard);
+}
+
 static void debug_window_memory(void)
 {
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0f);
     ImGui::SetNextWindowPos(ImVec2(567, 249), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(324, 308), ImGuiCond_FirstUseEver);
 
@@ -228,42 +280,57 @@ static void debug_window_memory(void)
 
     if (ImGui::BeginTabBar("##memory_tabs", ImGuiTabBarFlags_None))
     {
-        if (ImGui::BeginTabItem("BIOS"))
+        if (ImGui::BeginTabItem("BIOS", NULL, mem_edit_select == 0 ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None))
         {
             ImGui::PushFont(gui_default_font);
-            mem_edit.DrawContents(memory->GetBios(), 0x2000, 0);
+            if (mem_edit_select == 0)
+                mem_edit_select = -1;
+            current_mem_edit = 0;
+            mem_edit[current_mem_edit].Draw(memory->GetBios(), 0x2000, 0);
             ImGui::PopFont();
             ImGui::EndTabItem();
         }
 
-        if (ImGui::BeginTabItem("RAM"))
+        if (ImGui::BeginTabItem("RAM", NULL, mem_edit_select == 1 ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None))
         {
             ImGui::PushFont(gui_default_font);
-            mem_edit.DrawContents(memory->GetRam(), 0x400, 0x7000);
+             if (mem_edit_select == 1)
+                mem_edit_select = -1;
+            current_mem_edit = 1;
+            mem_edit[current_mem_edit].Draw(memory->GetRam(), 0x400, 0x7000);
             ImGui::PopFont();
             ImGui::EndTabItem();
         }
 
-        if (ImGui::BeginTabItem("SGM RAM"))
+        if (ImGui::BeginTabItem("SGM RAM", NULL, mem_edit_select == 2 ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None))
         {
             ImGui::PushFont(gui_default_font);
-            mem_edit.DrawContents(memory->GetSGMRam(), 0x8000, 0x0000);
+            if (mem_edit_select == 2)
+                mem_edit_select = -1;
+            current_mem_edit = 2;
+            mem_edit[current_mem_edit].Draw(memory->GetSGMRam(), 0x8000, 0x0000);
             ImGui::PopFont();
             ImGui::EndTabItem();
         }
 
-        if (IsValidPointer(cart->GetROM()) && ImGui::BeginTabItem("ROM"))
+        if (IsValidPointer(cart->GetROM()) && ImGui::BeginTabItem("ROM", NULL, mem_edit_select == 3 ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None))
         {
             ImGui::PushFont(gui_default_font);
-            mem_edit.DrawContents(cart->GetROM(), cart->GetROMSize(), 0x0000);
+            if (mem_edit_select == 3)
+                mem_edit_select = -1;
+            current_mem_edit = 3;
+            mem_edit[current_mem_edit].Draw(cart->GetROM(), cart->GetROMSize(), 0x0000);
             ImGui::PopFont();
             ImGui::EndTabItem();
         }
 
-        if (ImGui::BeginTabItem("VRAM"))
+        if (ImGui::BeginTabItem("VRAM", NULL, mem_edit_select == 4 ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None))
         {
             ImGui::PushFont(gui_default_font);
-            mem_edit.DrawContents(video->GetVRAM(), 0x4000, 0);
+            if (mem_edit_select == 4)
+                mem_edit_select = -1;
+            current_mem_edit = 4;
+            mem_edit[current_mem_edit].Draw(video->GetVRAM(), 0x4000, 0);
             ImGui::PopFont();
             ImGui::EndTabItem();
         }
@@ -272,10 +339,12 @@ static void debug_window_memory(void)
     }
 
     ImGui::End();
+    ImGui::PopStyleVar();
 }
 
 static void debug_window_disassembler(void)
 {
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0f);
     ImGui::SetNextWindowPos(ImVec2(159, 31), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(401, 641), ImGuiCond_FirstUseEver);
 
@@ -502,7 +571,7 @@ static void debug_window_disassembler(void)
 
     ImGui::PushFont(gui_default_font);
 
-    bool window_visible = ImGui::BeginChild("##dis", ImVec2(ImGui::GetWindowContentRegionWidth(), 0), true, 0);
+    bool window_visible = ImGui::BeginChild("##dis", ImVec2(ImGui::GetContentRegionAvail().x, 0), true, 0);
     
     if (window_visible)
     {
@@ -572,7 +641,8 @@ static void debug_window_disassembler(void)
             ImGui::SetScrollY((float)goto_back);
         }
 
-        ImGuiListClipper clipper(dis_size, ImGui::GetTextLineHeightWithSpacing());
+        ImGuiListClipper clipper;
+        clipper.Begin(dis_size, ImGui::GetTextLineHeightWithSpacing());
 
         while (clipper.Step())
         {
@@ -645,7 +715,6 @@ static void debug_window_disassembler(void)
                 ImGui::SameLine();
                 ImGui::TextColored(color_name, "%s", vec[item].record->name);
 
-
                 bool is_ret = is_return_instruction(vec[item].record->opcodes[0], vec[item].record->opcodes[1]);
                 if (is_ret)
                 {
@@ -664,10 +733,13 @@ static void debug_window_disassembler(void)
     ImGui::PopFont();
 
     ImGui::End();
+
+    ImGui::PopStyleVar();
 }
 
 static void debug_window_processor(void)
 {
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0f);
     ImGui::SetNextWindowPos(ImVec2(6, 31), ImGuiCond_FirstUseEver);
 
     ImGui::Begin("Z80 Status", &config_debug.show_processor, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoResize);
@@ -822,10 +894,12 @@ static void debug_window_processor(void)
     ImGui::PopFont();
 
     ImGui::End();
+    ImGui::PopStyleVar();
 }
 
 static void debug_window_vram_registers(void)
 {
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0f);
     ImGui::SetNextWindowPos(ImVec2(567, 560), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(260, 329), ImGuiCond_FirstUseEver);
 
@@ -834,12 +908,14 @@ static void debug_window_vram_registers(void)
     debug_window_vram_regs();
 
     ImGui::End();
+    ImGui::PopStyleVar();
 }
 
 static void debug_window_vram(void)
 {
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0f);
     ImGui::SetNextWindowPos(ImVec2(896, 31), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(668, 624), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(668, 640), ImGuiCond_FirstUseEver);
 
     ImGui::Begin("VDP Viewer", &config_debug.show_video);
 
@@ -884,6 +960,7 @@ static void debug_window_vram(void)
     }
 
     ImGui::End();
+    ImGui::PopStyleVar();
 }
 
 static void debug_window_vram_background(void)
@@ -937,17 +1014,25 @@ static void debug_window_vram_background(void)
         }
     }
 
+    int name_table_addr = regs[2] << 10;
+    int color_table_addr = regs[3] << 6;
+    if (mode == 2)
+        color_table_addr &= 0x2000;
+
+    ImGui::TextColored(cyan, " Name Table Addr:"); ImGui::SameLine();
+    ImGui::Text("$%04X", name_table_addr);
+
     float mouse_x = io.MousePos.x - p.x;
     float mouse_y = io.MousePos.y - p.y;
 
     int tile_x = -1;
     int tile_y = -1;
-    if ((mouse_x >= 0.0f) && (mouse_x < size_h) && (mouse_y >= 0.0f) && (mouse_y < size_v))
+    if (ImGui::IsWindowHovered() && (mouse_x >= 0.0f) && (mouse_x < size_h) && (mouse_y >= 0.0f) && (mouse_y < size_v))
     {
         tile_x = (int)(mouse_x / spacing_h);
         tile_y = (int)(mouse_y / spacing_v);
 
-        draw_list->AddRect(ImVec2(p.x + (tile_x * spacing_h), p.y + (tile_y * spacing_v)), ImVec2(p.x + ((tile_x + 1) * spacing_h), p.y + ((tile_y + 1) * spacing_v)), ImColor(cyan), 2.0f, 15, 2.0f);
+        draw_list->AddRect(ImVec2(p.x + (tile_x * spacing_h), p.y + (tile_y * spacing_v)), ImVec2(p.x + ((tile_x + 1) * spacing_h), p.y + ((tile_y + 1) * spacing_v)), ImColor(cyan), 2.0f, ImDrawFlags_RoundCornersAll, 2.0f);
 
         ImGui::NextColumn();
 
@@ -960,7 +1045,6 @@ static void debug_window_vram_background(void)
         ImGui::TextColored(cyan, " Y:"); ImGui::SameLine();
         ImGui::Text("$%02X", tile_y);
 
-        int name_table_addr = regs[2] << 10;
         int pattern_table_addr = regs[4] << 11;
         int region = (tile_y & 0x18) << 5;
 
@@ -980,10 +1064,29 @@ static void debug_window_vram_background(void)
 
         int tile_addr = (pattern_table_addr + (name_tile << 3)) & 0x3FFF;
 
+        int color_mask = ((regs[3] & 0x7F) << 3) | 0x07;
+
+        int color_tile_addr = 0;
+
+        if (mode == 2)
+            color_tile_addr = color_table_addr + ((name_tile & color_mask) << 3);
+        else if (mode == 0)
+            color_tile_addr = color_table_addr + (name_tile >> 3);
+
+        ImGui::TextColored(cyan, " Name Addr:"); ImGui::SameLine();
+        ImGui::Text(" $%04X", name_tile_addr);
         ImGui::TextColored(cyan, " Tile Number:"); ImGui::SameLine();
         ImGui::Text("$%03X", name_tile);
         ImGui::TextColored(cyan, " Tile Addr:"); ImGui::SameLine();
         ImGui::Text(" $%04X", tile_addr);
+        ImGui::TextColored(cyan, " Color Addr:"); ImGui::SameLine();
+        ImGui::Text("$%04X", color_tile_addr);
+
+        if (ImGui::IsMouseClicked(0))
+        {
+            mem_edit_select = 4;
+            mem_edit[4].JumpToAddress(name_tile_addr);
+        }
     }
 
     ImGui::Columns(1);
@@ -1009,6 +1112,8 @@ static void debug_window_vram_tiles(void)
 
     ImGui::Checkbox("Show Grid##grid_tiles", &show_grid);
 
+    ImGui::PushFont(gui_default_font);
+
     ImGui::Columns(2, "tiles", false);
     ImGui::SetColumnOffset(1, width + 10.0f);
 
@@ -1033,43 +1138,49 @@ static void debug_window_vram_tiles(void)
         }
     }
 
+    int pattern_table_addr = (regs[4] & (mode == 2 ? 0x04 : 0x07)) << 11;
+
+    ImGui::TextColored(cyan, " Pattern Table Addr:"); ImGui::SameLine();
+    ImGui::Text("$%04X", pattern_table_addr);
+
     float mouse_x = io.MousePos.x - p.x;
     float mouse_y = io.MousePos.y - p.y;
 
     int tile_x = -1;
     int tile_y = -1;
 
-    if ((mouse_x >= 0.0f) && (mouse_x < width) && (mouse_y >= 0.0f) && (mouse_y < height))
+    if (ImGui::IsWindowHovered() && (mouse_x >= 0.0f) && (mouse_x < width) && (mouse_y >= 0.0f) && (mouse_y < height))
     {
         tile_x = (int)(mouse_x / spacing);
         tile_y = (int)(mouse_y / spacing);
 
-        draw_list->AddRect(ImVec2(p.x + (tile_x * spacing), p.y + (tile_y * spacing)), ImVec2(p.x + ((tile_x + 1) * spacing), p.y + ((tile_y + 1) * spacing)), ImColor(cyan), 2.0f, 15, 2.0f);
+        draw_list->AddRect(ImVec2(p.x + (tile_x * spacing), p.y + (tile_y * spacing)), ImVec2(p.x + ((tile_x + 1) * spacing), p.y + ((tile_y + 1) * spacing)), ImColor(cyan), 2.0f, ImDrawFlags_RoundCornersAll, 2.0f);
 
         ImGui::NextColumn();
 
         ImGui::Image((void*)(intptr_t)renderer_emu_debug_vram_tiles, ImVec2(128.0f, 128.0f), ImVec2((1.0f / 32.0f) * tile_x, (1.0f / 32.0f) * tile_y), ImVec2((1.0f / 32.0f) * (tile_x + 1), (1.0f / 32.0f) * (tile_y + 1)));
 
-        ImGui::PushFont(gui_default_font);
-
         ImGui::TextColored(yellow, "DETAILS:");
 
         int tile = (tile_y << 5) + tile_x;
 
-        int tile_addr = 0;
-
-        int pattern_table_addr = (regs[4] & (mode == 2 ? 0x04 : 0x07)) << 11;
-        tile_addr = (pattern_table_addr + (tile << 3)) & 0x3FFF;
+        int tile_addr = (pattern_table_addr + (tile << 3)) & 0x3FFF;
 
         ImGui::TextColored(cyan, " Tile Number:"); ImGui::SameLine();
         ImGui::Text("$%03X", tile); 
         ImGui::TextColored(cyan, " Tile Addr:"); ImGui::SameLine();
         ImGui::Text("$%04X", tile_addr); 
 
-        ImGui::PopFont();
+        if (ImGui::IsMouseClicked(0))
+        {
+            mem_edit_select = 4;
+            mem_edit[4].JumpToAddress(tile_addr);
+        }
     }
 
     ImGui::Columns(1);
+
+    ImGui::PopFont();
 }
 
 static void debug_window_vram_sprites(void)
@@ -1102,6 +1213,7 @@ static void debug_window_vram_sprites(void)
     ImGui::SetColumnOffset(1, sprites_16 ? 330.0f : 200.0f);
 
     ImGui::BeginChild("sprites", ImVec2(0, 0.0f), true);
+    bool window_hovered = ImGui::IsWindowHovered();
 
     for (int s = 0; s < 32; s++)
     {
@@ -1112,10 +1224,10 @@ static void debug_window_vram_sprites(void)
         float mouse_x = io.MousePos.x - p[s].x;
         float mouse_y = io.MousePos.y - p[s].y;
 
-        if ((mouse_x >= 0.0f) && (mouse_x < width) && (mouse_y >= 0.0f) && (mouse_y < height))
+        if (window_hovered && (mouse_x >= 0.0f) && (mouse_x < width) && (mouse_y >= 0.0f) && (mouse_y < height))
         {
             ImDrawList* draw_list = ImGui::GetWindowDrawList();
-            draw_list->AddRect(ImVec2(p[s].x, p[s].y), ImVec2(p[s].x + width, p[s].y + height), ImColor(cyan), 2.0f, 15, 3.0f);
+            draw_list->AddRect(ImVec2(p[s].x, p[s].y), ImVec2(p[s].x + width, p[s].y + height), ImColor(cyan), 2.0f, ImDrawFlags_RoundCornersAll, 3.0f);
         }
 
         if (s % 4 < 3)
@@ -1142,7 +1254,7 @@ static void debug_window_vram_sprites(void)
         float mouse_x = io.MousePos.x - p[s].x;
         float mouse_y = io.MousePos.y - p[s].y;
 
-        if ((mouse_x >= 0.0f) && (mouse_x < width) && (mouse_y >= 0.0f) && (mouse_y < height))
+        if (window_hovered && (mouse_x >= 0.0f) && (mouse_x < width) && (mouse_y >= 0.0f) && (mouse_y < height))
         {
             int x = 0;
             int y = 0;
@@ -1194,9 +1306,12 @@ static void debug_window_vram_sprites(void)
             recty_max = fminf(fmaxf(recty_max, p_screen.y), p_screen.y + (runtime.screen_height * screen_scale));
             
             ImDrawList* draw_list = ImGui::GetWindowDrawList();
-            draw_list->AddRect(ImVec2(rectx_min, recty_min), ImVec2(rectx_max, recty_max), ImColor(cyan), 2.0f, 15, 2.0f);
+            draw_list->AddRect(ImVec2(rectx_min, recty_min), ImVec2(rectx_max, recty_max), ImColor(cyan), 2.0f, ImDrawFlags_RoundCornersAll, 2.0f);
 
             ImGui::TextColored(yellow, "DETAILS:");
+            ImGui::TextColored(cyan, " Attribute Addr:"); ImGui::SameLine();
+            ImGui::Text("$%04X", sprite_attribute_offset);
+
             ImGui::TextColored(cyan, " X:"); ImGui::SameLine();
             ImGui::Text("$%02X", x);
             ImGui::TextColored(cyan, " Y:"); ImGui::SameLine();
@@ -1213,6 +1328,12 @@ static void debug_window_vram_sprites(void)
 
             ImGui::TextColored(cyan, " Early Clock:"); ImGui::SameLine();
             sprite_shift > 0 ? ImGui::TextColored(green, "ON ") : ImGui::TextColored(gray, "OFF");
+
+            if (ImGui::IsMouseClicked(0))
+            {
+                mem_edit_select = 4;
+                mem_edit[4].JumpToAddress(sprite_tile_addr);
+            }
         }
     }
 
