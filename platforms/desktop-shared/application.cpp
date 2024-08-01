@@ -49,7 +49,9 @@ static void save_window_size(void);
 
 int application_init(const char* rom_file, const char* symbol_file)
 {
-    Log ("<·> %s %s Desktop App <·>", GEARCOLECO_TITLE, GEARCOLECO_VERSION);
+    Log("\n%s", GEARCOLECO_TITLE_ASCII);
+    Log("%s %s Desktop App", GEARCOLECO_TITLE, GEARCOLECO_VERSION);
+    Log("By Ignacio Sánchez (drhelius)");
 
     config_init();
     config_read();
@@ -246,6 +248,12 @@ static void sdl_events(void)
     while (SDL_PollEvent(&event))
     {
         if (event.type == SDL_QUIT)
+        {
+            running = false;
+            break;
+        }
+
+        if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE && event.window.windowID == SDL_GetWindowID(sdl_window))
         {
             running = false;
             break;
