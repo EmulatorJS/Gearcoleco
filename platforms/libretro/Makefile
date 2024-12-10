@@ -192,6 +192,9 @@ else ifneq (,$(findstring ios,$(platform)))
       MINVERSION = -miphoneos-version-min=5.0
    endif
       PLATFORM_DEFINES := $(MINVERSION)
+      CFLAGS += $(MINVERSION)
+      CXXFLAGS += $(MINVERSION)
+      LDFLAGS += $(MINVERSION)
 # tvOS
 else ifeq ($(platform), tvos-arm64)
    TARGET := $(TARGET_NAME)_libretro_tvos.dylib
@@ -203,6 +206,11 @@ else ifeq ($(platform), tvos-arm64)
 
    CC = cc -arch arm64 -isysroot $(IOSSDK)
    CXX = c++ -arch arm64 -isysroot $(IOSSDK)
+   MINVERSION = -mappletvos-version-min=11.0
+   PLATFORM_DEFINES := $(MINVERSION)
+   CFLAGS += $(MINVERSION)
+   CXXFLAGS += $(MINVERSION)
+   LDFLAGS += $(MINVERSION)
 
 # QNX
 else ifneq (,$(findstring qnx,$(platform)))
@@ -344,6 +352,7 @@ CFLAGS   += -DGEARCOLECO_DISABLE_DISASSEMBLER -Wall -D__LIBRETRO__ $(fpic)
 CXXFLAGS += -DGEARCOLECO_DISABLE_DISASSEMBLER -Wall -D__LIBRETRO__ $(fpic)
 
 all: $(TARGET)
+	@echo Build complete for $(platform)
 
 $(TARGET): $(OBJECTS)
 ifeq ($(STATIC_LINKING), 1)
@@ -352,8 +361,11 @@ else
 	$(CXX) $(fpic) $(SHARED) $(INCLUDES) -o $@ $(OBJECTS) $(LDFLAGS)
 endif
   
-%.o: %.c
+%.o: %.cpp
 	$(CXX) $(CXXFLAGS) $(fpic) -c -o $@ $<
+
+%.o: %.c
+	$(CC) $(CXXFLAGS) $(fpic) -c -o $@ $<
 
 clean:
 	rm -f $(OBJECTS) $(TARGET)

@@ -2,7 +2,8 @@
     "files.exclude": {
         "**/*.o": true,
         "**/*.so": true,
-        "**/gearcoleco": true
+        "**/gearcoleco": true,
+        "**/binary_to_compressed_c": true
     },
     "cmake.configureOnOpen": false,
     "files.associations": {
@@ -64,6 +65,7 @@
         "thread": "cpp",
         "cinttypes": "cpp",
         "typeinfo": "cpp",
-        "optional": "cpp"
+        "optional": "cpp",
+        "cstring": "cpp"
     }
 }

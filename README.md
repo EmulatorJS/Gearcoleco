@@ -14,14 +14,16 @@ This is an open source project with its ongoing development made possible thanks
 
 Don't hesitate to report bugs or ask for new features by [openning an issue](https://github.com/drhelius/Gearboy/issues). 
 
-----------
+<img alt="Gearcoleco" src="https://user-images.githubusercontent.com/863613/129458358-58e280ce-8c4f-4685-8b8f-c3dbb0c72f13.png">
 
 ## Downloads
 
 - **Windows**:
   - [Gearcoleco-1.2.0-windows-x64.zip](https://github.com/drhelius/Gearcoleco/releases/download/1.2.0/Gearcoleco-1.2.0-windows-x64.zip)
   - [Gearcoleco-1.2.0-windows-arm64.zip](https://github.com/drhelius/Gearcoleco/releases/download/1.2.0/Gearcoleco-1.2.0-windows-arm64.zip)
-  - NOTE: You may need to install the [Microsoft Visual C++ Redistributable](https://go.microsoft.com/fwlink/?LinkId=746572)
+  - NOTE: If you have errors you may need to install:
+    - [Microsoft Visual C++ Redistributable](https://go.microsoft.com/fwlink/?LinkId=746572)
+    - [OpenGL Compatibility Pack](https://apps.microsoft.com/detail/9nqpsl29bfff)
 - **macOS**:
   - [Gearcoleco-1.2.0-macos-arm.zip](https://github.com/drhelius/Gearcoleco/releases/download/1.2.0/Gearcoleco-1.2.0-macos-arm.zip)
   - [Gearcoleco-1.2.0-macos-intel.zip](https://github.com/drhelius/Gearcoleco/releases/download/1.2.0/Gearcoleco-1.2.0-macos-intel.zip)
@@ -47,8 +49,6 @@ Don't hesitate to report bugs or ask for new features by [openning an issue](htt
 - Rom loading from the command line by adding the rom path as an argument.
 - Support for modern game controllers through [gamecontrollerdb.txt](https://github.com/gabomdq/SDL_GameControllerDB) file located in the same directory as the application binary.
 
-<img width="810" alt="Screen Shot 2021-08-14 at 21 15 02" src="https://user-images.githubusercontent.com/863613/129458358-58e280ce-8c4f-4685-8b8f-c3dbb0c72f13.png">
-
 ## Tips
 
 - *BIOS*: Gearcoleco needs a BIOS to run. It is possible to load any BIOS but the original one with md5 ```2c66f5911e5b42b8ebe113403548eee7``` is recommended.
@@ -67,7 +67,6 @@ Don't hesitate to report bugs or ask for new features by [openning an issue](htt
 
 - Install Microsoft Visual Studio Community 2022 or later.
 - Open the Visual Studio solution in `platforms/windows/Gearcoleco.sln` and build.
-- You may want to use the `platforms/windows/Makefile` to build the application using MinGW.
 
 ### macOS
 
@@ -85,7 +84,7 @@ make dist
 - Ubuntu / Debian / Raspberry Pi (Raspbian):
 
 ``` shell
-sudo apt-get install build-essential libsdl2-dev libglew-dev libgtk-3-dev
+sudo apt install build-essential libsdl2-dev libglew-dev libgtk-3-dev
 cd platforms/linux
 make
 ```
@@ -121,7 +120,7 @@ gmake
 - Ubuntu / Debian / Raspberry Pi (Raspbian):
 
 ``` shell
-sudo apt-get install build-essential
+sudo apt install build-essential
 cd platforms/libretro
 make
 ```

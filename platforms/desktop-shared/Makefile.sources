@@ -2,7 +2,8 @@ SRC_DIR = ../../src
 DESKTOP_SRC_DIR=../desktop-shared
 AUDIO_SRC_DIR=../audio-shared
 
-SOURCES_C :=
+SOURCES_C := \
+    $(SRC_DIR)/miniz/miniz.c \
 
 SOURCES_CXX := \
     $(DESKTOP_SRC_DIR)/main.cpp \
@@ -20,7 +21,7 @@ SOURCES_CXX := \
     $(DESKTOP_SRC_DIR)/imgui/imgui_tables.cpp \
     $(DESKTOP_SRC_DIR)/imgui/imgui_demo.cpp \
     $(DESKTOP_SRC_DIR)/imgui/memory_editor.cpp \
-    $(AUDIO_SRC_DIR)/Sound_Queue.cpp \
+    $(AUDIO_SRC_DIR)/sound_queue.cpp \
     $(SRC_DIR)/Audio.cpp \
     $(SRC_DIR)/AY8910.cpp \
     $(SRC_DIR)/Cartridge.cpp \
