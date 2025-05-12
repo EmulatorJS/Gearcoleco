@@ -55,7 +55,7 @@ static void init_scanlines_texture(void);
 static void render_gui(void);
 static void render_emu_normal(void);
 static void render_emu_mix(void);
-static void render_emu_bilinear(void);
+static void update_emu_texture(void);
 static void render_quad(void);
 static void update_system_texture(void);
 static void update_debug_textures(void);
@@ -63,20 +63,19 @@ static void render_scanlines(void);
 
 void renderer_init(void)
 {
-    #ifndef __APPLE__
+#if !defined(__APPLE__)
     GLenum err = glewInit();
     if (GLEW_OK != err)
     {
-        /* Problem: glewInit failed, something is seriously wrong. */
-        Log("GLEW Error: %s\n", glewGetErrorString(err));
+        Log("GLEW Error: %s", glewGetErrorString(err));
     }
 
     renderer_glew_version = (const char*)glewGetString(GLEW_VERSION);
-    renderer_opengl_version = (const char*)glGetString(GL_VERSION);
+    Log("Using GLEW %s", renderer_glew_version);
+#endif
 
-    Log("Using GLEW %s\n", renderer_glew_version);
-    
-    #endif
+    renderer_opengl_version = (const char*)glGetString(GL_VERSION);
+    Log("Using OpenGL %s", renderer_opengl_version);
 
     init_ogl_gui();
     init_ogl_emu();
@@ -119,7 +118,7 @@ void renderer_render(void)
     if (config_video.scanlines)
         render_scanlines();
 
-    render_emu_bilinear();
+    update_emu_texture();
 
     ImVec4 clear_color = ImVec4(0.1f, 0.1f, 0.1f, 1.00f);
 
@@ -299,14 +298,14 @@ static void update_debug_textures(void)
     }
 }
 
-static void render_emu_bilinear(void)
+static void update_emu_texture(void)
 {
     glBindTexture(GL_TEXTURE_2D, renderer_emu_texture);
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-    if (config_video.scanlines)
+    if (config_video.scanlines && config_video.scanlines_filter)
     {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);

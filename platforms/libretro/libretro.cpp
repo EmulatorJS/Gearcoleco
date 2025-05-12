@@ -39,7 +39,7 @@ static const char slash = '/';
 #define JOYPAD_BUTTONS 16
 
 static struct retro_log_callback logging;
-static retro_log_printf_t log_cb;
+retro_log_printf_t log_cb;
 static char retro_system_directory[4096];
 static char retro_game_path[4096];
 
@@ -47,6 +47,7 @@ static s16 audio_buf[GC_AUDIO_BUFFER_SIZE];
 static int audio_sample_count = 0;
 static int current_screen_width = 0;
 static int current_screen_height = 0;
+static float current_aspect_ratio = 0;
 static bool allow_up_down = false;
 static bool libretro_supports_bitmasks;
 static int spinner_support = 0;
@@ -98,7 +99,7 @@ static void fallback_log(enum retro_log_level level, const char *fmt, ...)
 
 static const struct retro_variable vars[] = {
     { "gearcoleco_timing", "Refresh Rate (restart); Auto|NTSC (60 Hz)|PAL (50 Hz)" },
-    { "gearcoleco_aspect_ratio", "Aspect Ratio (restart); 1:1 PAR|4:3 DAR|16:9 DAR" },
+    { "gearcoleco_aspect_ratio", "Aspect Ratio; 1:1 PAR|4:3 DAR|16:9 DAR|16:10 DAR" },
     { "gearcoleco_overscan", "Overscan; Disabled|Top+Bottom|Full (284 width)|Full (320 width)" },
     { "gearcoleco_up_down_allowed", "Allow Up+Down / Left+Right; Disabled|Enabled" },
     { "gearcoleco_no_sprite_limit", "No Sprite Limit; Disabled|Enabled" },
@@ -301,7 +302,7 @@ static void load_bootroms(void)
 {
     char bios_path[4113];
 
-    sprintf(bios_path, "%s%ccolecovision.rom", retro_system_directory, slash);
+    snprintf(bios_path, 4113, "%s%ccolecovision.rom", retro_system_directory, slash);
 
     core->GetMemory()->LoadBios(bios_path);
 }
@@ -505,6 +506,8 @@ static void check_variables(void)
             aspect_ratio = 4.0f / 3.0f;
         else if (strcmp(var.value, "16:9 DAR") == 0)
             aspect_ratio = 16.0f / 9.0f;
+            else if (strcmp(var.value, "16:10 DAR") == 0)
+            aspect_ratio = 16.0f / 10.0f;
         else
             aspect_ratio = 0.0f;
     }
@@ -578,17 +581,20 @@ void retro_run(void)
     GC_RuntimeInfo runtime_info;
     core->GetRuntimeInfo(runtime_info);
 
-    if ((runtime_info.screen_width != current_screen_width) || (runtime_info.screen_height != current_screen_height))
+    if ((runtime_info.screen_width != current_screen_width) ||
+        (runtime_info.screen_height != current_screen_height) ||
+        (aspect_ratio != current_aspect_ratio))
     {
         current_screen_width = runtime_info.screen_width;
         current_screen_height = runtime_info.screen_height;
+        current_aspect_ratio = aspect_ratio;
 
         retro_system_av_info info;
         info.geometry.base_width   = runtime_info.screen_width;
         info.geometry.base_height  = runtime_info.screen_height;
         info.geometry.max_width    = runtime_info.screen_width;
         info.geometry.max_height   = runtime_info.screen_height;
-        info.geometry.aspect_ratio = 0.0;
+        info.geometry.aspect_ratio = aspect_ratio;
 
         environ_cb(RETRO_ENVIRONMENT_SET_GEOMETRY, &info.geometry);
     }
@@ -610,6 +616,7 @@ void retro_reset(void)
 
 bool retro_load_game(const struct retro_game_info *info)
 {
+    core->GetCartridge()->Reset();
     check_variables();
     load_bootroms();
 
@@ -628,7 +635,7 @@ bool retro_load_game(const struct retro_game_info *info)
 
     snprintf(retro_game_path, sizeof(retro_game_path), "%s", info->path);
 
-    struct retro_memory_descriptor descs[4];
+    struct retro_memory_descriptor descs[7];
 
     memset(descs, 0, sizeof(descs));
 
@@ -644,10 +651,22 @@ bool retro_load_game(const struct retro_game_info *info)
     descs[2].ptr   = core->GetMemory()->GetRam();
     descs[2].start = 0x6000;
     descs[2].len   = 0x0400;
+    // RAM MIRROR
+    descs[3].ptr   = core->GetMemory()->GetRam();
+    descs[3].start = 0x7000;
+    descs[3].len   = 0x0400;
     // CART
-    descs[3].ptr   = core->GetCartridge()->GetROM();
-    descs[3].start = 0x8000;
-    descs[3].len   = 0x8000;
+    descs[4].ptr   = core->GetCartridge()->GetROM();
+    descs[4].start = 0x8000;
+    descs[4].len   = 0x8000;
+    // SGM LOWER
+    descs[5].ptr   = core->GetMemory()->GetSGMRam();
+    descs[5].start = 0x010000;
+    descs[5].len   = 0x2000;
+    // SGM UPPER
+    descs[6].ptr   = core->GetMemory()->GetSGMRam() + 0x2000;
+    descs[6].start = 0x012000;
+    descs[6].len   = 0x6000;
 
     struct retro_memory_map mmaps;
     mmaps.descriptors = descs;

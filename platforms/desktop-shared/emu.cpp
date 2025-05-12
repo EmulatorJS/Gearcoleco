@@ -19,6 +19,7 @@
 
 #include "../../src/gearcoleco.h"
 #include "../audio-shared/sound_queue.h"
+#include "config.h"
 
 #define EMU_IMPORT
 #include "emu.h"
@@ -125,7 +126,8 @@ void emu_update(void)
             debug_step = false;
         }
 
-        update_debug();
+        if (config_debug.debug)
+            update_debug();
 
         if ((sampleCount > 0) && !gearcoleco->IsPaused())
         {
@@ -292,11 +294,11 @@ void emu_get_info(char* info)
         int rom_banks = cart->GetROMBankCount();
         const char* mapper = get_mapper(cart->GetType());
 
-        sprintf(info, "File Name: %s\nMapper: %s\nRefresh Rate: %s\nCartridge Header: %s\nROM Banks: %d\nScreen Resolution: %dx%d", filename, mapper, pal, checksum, rom_banks, runtime.screen_width, runtime.screen_height);
+        snprintf(info, 512, "File Name: %s\nMapper: %s\nRefresh Rate: %s\nCartridge Header: %s\nROM Banks: %d\nScreen Resolution: %dx%d", filename, mapper, pal, checksum, rom_banks, runtime.screen_width, runtime.screen_height);
     }
     else
     {
-        sprintf(info, "There is no ROM loaded!");
+        snprintf(info, 512, "There is no ROM loaded!");
     }
 }
 
@@ -368,7 +370,7 @@ void emu_save_screenshot(const char* file_path)
 
     stbi_write_png(file_path, runtime.screen_width, runtime.screen_height, 3, emu_frame_buffer, runtime.screen_width * 3);
 
-    Log("Screenshot saved!");
+    Debug("Screenshot saved!");
 }
 
 static void save_ram(void)

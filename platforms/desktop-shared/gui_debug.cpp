@@ -19,14 +19,16 @@
 
 #include <math.h>
 #include "imgui/imgui.h"
-#include "imgui/memory_editor.h"
-#include "imgui/colors.h"
+#include "nfd/nfd.h"
+#include "nfd/nfd_sdl2.h"
 #include "config.h"
 #include "emu.h"
 #include "renderer.h"
 #include "../../src/gearcoleco.h"
 #include "gui.h"
 #include "gui_debug_constants.h"
+#include "gui_debug_memory.h"
+#include "application.h"
 
 #define GUI_DEBUG_IMPORT
 #include "gui_debug.h"
@@ -46,9 +48,6 @@ struct DisassmeblerLine
     std::string symbol;
 };
 
-static MemEditor mem_edit[5];
-static int mem_edit_select = -1;
-static int current_mem_edit = 0;
 static std::vector<DebugSymbol> symbols;
 static Memory::stDisassembleRecord* selected_record = NULL;
 static char brk_address_cpu[5] = "";
@@ -62,7 +61,6 @@ static bool goto_back_requested = false;
 static int goto_back = 0;
 
 static void debug_window_processor(void);
-static void debug_window_memory(void);
 static void debug_window_disassembler(void);
 static void debug_window_vram_registers(void);
 static void debug_window_vram(void);
@@ -83,13 +81,16 @@ void gui_debug_windows(void)
         if (config_debug.show_processor)
             debug_window_processor();
         if (config_debug.show_memory)
-            debug_window_memory();
+            gui_debug_window_memory();
         if (config_debug.show_disassembler)
             debug_window_disassembler();
         if (config_debug.show_video)
             debug_window_vram();
         if (config_debug.show_video_registers)
             debug_window_vram_registers();
+
+        gui_debug_memory_watches_window();
+        gui_debug_memory_search_window();
     }
 }
 
@@ -98,6 +99,7 @@ void gui_debug_reset(void)
     gui_debug_reset_breakpoints_cpu();
     gui_debug_reset_breakpoints_mem();
     gui_debug_reset_symbols();
+    gui_debug_memory_reset();
     selected_record = NULL;
 }
 
@@ -195,153 +197,6 @@ void gui_debug_go_back(void)
     goto_back_requested = true;
 }
 
-void gui_debug_copy_memory(void)
-{
-    int size = 0;
-    u8* data = NULL;
-    mem_edit[current_mem_edit].Copy(&data, &size);
-
-    if (IsValidPointer(data))
-    {
-        std::string text;
-
-        for (int i = 0; i < size; i++)
-        {
-            char byte[3];
-            sprintf(byte, "%02X", data[i]);
-            if (i > 0)
-                text += " ";
-            text += byte;
-        }
-
-        SDL_SetClipboardText(text.c_str());
-    }
-}
-
-void gui_debug_paste_memory(void)
-{
-    char* clipboard = SDL_GetClipboardText();
-
-    if (IsValidPointer(clipboard))
-    {
-        std::string text(clipboard);
-
-        text.erase(std::remove(text.begin(), text.end(), ' '), text.end());
-
-        size_t buffer_size = text.size() / 2;
-        u8* data = new u8[buffer_size];
-
-        for (size_t i = 0; i < buffer_size; i ++)
-        {
-            std::string byte = text.substr(i * 2, 2);
-
-            try
-            {
-                data[i] = (u8)std::stoul(byte, 0, 16);
-            }
-            catch(const std::invalid_argument&)
-            {
-                delete[] data;
-                return;
-            }
-        }
-
-        mem_edit[current_mem_edit].Paste(data, buffer_size);
-
-        delete[] data;
-    }
-
-    SDL_free(clipboard);
-}
-
-static void debug_window_memory(void)
-{
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0f);
-    ImGui::SetNextWindowPos(ImVec2(567, 249), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(324, 308), ImGuiCond_FirstUseEver);
-
-    ImGui::Begin("Memory Editor", &config_debug.show_memory);
-
-    GearcolecoCore* core = emu_get_core();
-    Memory* memory = core->GetMemory();
-    Cartridge* cart = core->GetCartridge();
-    Video* video = core->GetVideo();
-
-    ImGui::PushFont(gui_default_font);
-
-    ImGui::TextColored(cyan, "  ROM: ");ImGui::SameLine();
-
-    ImGui::TextColored(magenta, "BANK");ImGui::SameLine();
-    ImGui::Text("$%02X", memory->GetRomBank()); ImGui::SameLine();
-    ImGui::TextColored(magenta, "  ADDRESS");ImGui::SameLine();
-    ImGui::Text("$%05X", memory->GetRomBankAddress());
-
-    ImGui::PopFont();
-
-    if (ImGui::BeginTabBar("##memory_tabs", ImGuiTabBarFlags_None))
-    {
-        if (ImGui::BeginTabItem("BIOS", NULL, mem_edit_select == 0 ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None))
-        {
-            ImGui::PushFont(gui_default_font);
-            if (mem_edit_select == 0)
-                mem_edit_select = -1;
-            current_mem_edit = 0;
-            mem_edit[current_mem_edit].Draw(memory->GetBios(), 0x2000, 0);
-            ImGui::PopFont();
-            ImGui::EndTabItem();
-        }
-
-        if (ImGui::BeginTabItem("RAM", NULL, mem_edit_select == 1 ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None))
-        {
-            ImGui::PushFont(gui_default_font);
-             if (mem_edit_select == 1)
-                mem_edit_select = -1;
-            current_mem_edit = 1;
-            mem_edit[current_mem_edit].Draw(memory->GetRam(), 0x400, 0x7000);
-            ImGui::PopFont();
-            ImGui::EndTabItem();
-        }
-
-        if (ImGui::BeginTabItem("SGM RAM", NULL, mem_edit_select == 2 ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None))
-        {
-            ImGui::PushFont(gui_default_font);
-            if (mem_edit_select == 2)
-                mem_edit_select = -1;
-            current_mem_edit = 2;
-            mem_edit[current_mem_edit].Draw(memory->GetSGMRam(), 0x8000, 0x0000);
-            ImGui::PopFont();
-            ImGui::EndTabItem();
-        }
-
-        if (IsValidPointer(cart->GetROM()) && ImGui::BeginTabItem("ROM", NULL, mem_edit_select == 3 ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None))
-        {
-            ImGui::PushFont(gui_default_font);
-            if (mem_edit_select == 3)
-                mem_edit_select = -1;
-            current_mem_edit = 3;
-            mem_edit[current_mem_edit].Draw(cart->GetROM(), cart->GetROMSize(), 0x0000);
-            ImGui::PopFont();
-            ImGui::EndTabItem();
-        }
-
-        if (ImGui::BeginTabItem("VRAM", NULL, mem_edit_select == 4 ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None))
-        {
-            ImGui::PushFont(gui_default_font);
-            if (mem_edit_select == 4)
-                mem_edit_select = -1;
-            current_mem_edit = 4;
-            mem_edit[current_mem_edit].Draw(video->GetVRAM(), 0x4000, 0);
-            ImGui::PopFont();
-            ImGui::EndTabItem();
-        }
-
-        ImGui::EndTabBar();
-    }
-
-    ImGui::End();
-    ImGui::PopStyleVar();
-}
-
 static void debug_window_disassembler(void)
 {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0f);
@@ -363,7 +218,10 @@ static void debug_window_disassembler(void)
         emu_debug_step();
     ImGui::SameLine();
     if (ImGui::Button("Step Frame"))
+    {
         emu_debug_next_frame();
+        gui_debug_memory_step_frame();
+    }
     ImGui::SameLine();
     if (ImGui::Button("Continue"))
         emu_debug_continue(); 
@@ -432,7 +290,7 @@ static void debug_window_disassembler(void)
         ImGui::Separator();
 
         if (IsValidPointer(selected_record))
-            sprintf(brk_address_cpu, "%04X", selected_record->address);
+            snprintf(brk_address_cpu, sizeof(brk_address_cpu), "%04X", selected_record->address);
 
         ImGui::PushItemWidth(70);
         if (ImGui::InputTextWithHint("##add_breakpoint_cpu", "XXXX", brk_address_cpu, IM_ARRAYSIZE(brk_address_cpu), ImGuiInputTextFlags_AutoSelectAll | ImGuiInputTextFlags_EnterReturnsTrue))
@@ -752,107 +610,126 @@ static void debug_window_processor(void)
 
     ImGui::Separator();
 
-    ImGui::TextColored(orange, "  S Z Y H X P N C");
+    ImGui::TextColored(light_brown, "  S Z Y H X P N C");
     ImGui::Text("  " BYTE_TO_BINARY_PATTERN_ALL_SPACED, BYTE_TO_BINARY(proc_state->AF->GetLow()));
 
     ImGui::Columns(2, "registers");
     ImGui::Separator();
     ImGui::TextColored(cyan, " A"); ImGui::SameLine();
     ImGui::Text(" $%02X", proc_state->AF->GetHigh());
-    ImGui::Text(BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->AF->GetHigh()));
+    char buffer[20];
+    snprintf(buffer, sizeof(buffer), BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->AF->GetHigh()));
+    ImGui::Text("%s", buffer);
 
     ImGui::NextColumn();
     ImGui::TextColored(cyan, " F"); ImGui::SameLine();
     ImGui::Text(" $%02X", proc_state->AF->GetLow());
-    ImGui::Text(BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->AF->GetLow()));
+    snprintf(buffer, sizeof(buffer), BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->AF->GetLow()));
+    ImGui::Text("%s", buffer);
 
     ImGui::NextColumn();
     ImGui::Separator();
-    ImGui::TextColored(cyan, " A'"); ImGui::SameLine();
+    ImGui::TextColored(violet, " A'"); ImGui::SameLine();
     ImGui::Text("$%02X", proc_state->AF2->GetHigh());
-    ImGui::Text(BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->AF2->GetHigh()));
+    snprintf(buffer, sizeof(buffer), BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->AF2->GetHigh()));
+    ImGui::Text("%s", buffer);
 
     ImGui::NextColumn();
-    ImGui::TextColored(cyan, " F'"); ImGui::SameLine();
+    ImGui::TextColored(violet, " F'"); ImGui::SameLine();
     ImGui::Text("$%02X", proc_state->AF2->GetLow());
-    ImGui::Text(BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->AF2->GetLow()));
+    snprintf(buffer, sizeof(buffer), BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->AF2->GetLow()));
+    ImGui::Text("%s", buffer);
 
     ImGui::NextColumn();
     ImGui::Separator();
     ImGui::TextColored(cyan, " B"); ImGui::SameLine();
     ImGui::Text(" $%02X", proc_state->BC->GetHigh());
-    ImGui::Text(BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->BC->GetHigh()));
+    snprintf(buffer, sizeof(buffer), BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->BC->GetHigh()));
+    ImGui::Text("%s", buffer);
 
     ImGui::NextColumn();
     ImGui::TextColored(cyan, " C"); ImGui::SameLine();
     ImGui::Text(" $%02X", proc_state->BC->GetLow());
-    ImGui::Text(BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->BC->GetLow()));
+    snprintf(buffer, sizeof(buffer), BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->BC->GetLow()));
+    ImGui::Text("%s", buffer);
 
     ImGui::NextColumn();
     ImGui::Separator();
-    ImGui::TextColored(cyan, " B'"); ImGui::SameLine();
+    ImGui::TextColored(violet, " B'"); ImGui::SameLine();
     ImGui::Text("$%02X", proc_state->BC2->GetHigh());
-    ImGui::Text(BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->BC2->GetHigh()));
+    snprintf(buffer, sizeof(buffer), BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->BC2->GetHigh()));
+    ImGui::Text("%s", buffer);
 
     ImGui::NextColumn();
-    ImGui::TextColored(cyan, " C'"); ImGui::SameLine();
+    ImGui::TextColored(violet, " C'"); ImGui::SameLine();
     ImGui::Text("$%02X", proc_state->BC2->GetLow());
-    ImGui::Text(BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->BC2->GetLow()));
+    snprintf(buffer, sizeof(buffer), BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->BC2->GetLow()));
+    ImGui::Text("%s", buffer);
 
     ImGui::NextColumn();
     ImGui::Separator();
     ImGui::TextColored(cyan, " D"); ImGui::SameLine();
     ImGui::Text(" $%02X", proc_state->DE->GetHigh());
-    ImGui::Text(BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->DE->GetHigh()));
+    snprintf(buffer, sizeof(buffer), BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->DE->GetHigh()));
+    ImGui::Text("%s", buffer);
 
     ImGui::NextColumn();
     ImGui::TextColored(cyan, " E"); ImGui::SameLine();
     ImGui::Text(" $%02X", proc_state->DE->GetLow());
-    ImGui::Text(BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->DE->GetLow()));
+    snprintf(buffer, sizeof(buffer), BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->DE->GetLow()));
+    ImGui::Text("%s", buffer);
 
     ImGui::NextColumn();
     ImGui::Separator();
-    ImGui::TextColored(cyan, " D'"); ImGui::SameLine();
+    ImGui::TextColored(violet, " D'"); ImGui::SameLine();
     ImGui::Text("$%02X", proc_state->DE2->GetHigh());
-    ImGui::Text(BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->DE2->GetHigh()));
+    snprintf(buffer, sizeof(buffer), BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->DE2->GetHigh()));
+    ImGui::Text("%s", buffer);
 
     ImGui::NextColumn();
-    ImGui::TextColored(cyan, " E'"); ImGui::SameLine();
+    ImGui::TextColored(violet, " E'"); ImGui::SameLine();
     ImGui::Text("$%02X", proc_state->DE2->GetLow());
-    ImGui::Text(BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->DE2->GetLow()));
+    snprintf(buffer, sizeof(buffer), BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->DE2->GetLow()));
+    ImGui::Text("%s", buffer);
 
     ImGui::NextColumn();
     ImGui::Separator();
     ImGui::TextColored(cyan, " H"); ImGui::SameLine();
     ImGui::Text(" $%02X", proc_state->HL->GetHigh());
-    ImGui::Text(BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->HL->GetHigh()));
+    snprintf(buffer, sizeof(buffer), BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->HL->GetHigh()));
+    ImGui::Text("%s", buffer);
 
     ImGui::NextColumn();
     ImGui::TextColored(cyan, " L"); ImGui::SameLine();
     ImGui::Text(" $%02X", proc_state->HL->GetLow());
-    ImGui::Text(BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->HL->GetLow()));
+    snprintf(buffer, sizeof(buffer), BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->HL->GetLow()));
+    ImGui::Text("%s", buffer);
 
     ImGui::NextColumn();
     ImGui::Separator();
-    ImGui::TextColored(cyan, " H'"); ImGui::SameLine();
+    ImGui::TextColored(violet, " H'"); ImGui::SameLine();
     ImGui::Text("$%02X", proc_state->HL2->GetHigh());
-    ImGui::Text(BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->HL2->GetHigh()));
+    snprintf(buffer, sizeof(buffer), BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->HL2->GetHigh()));
+    ImGui::Text("%s", buffer);
 
     ImGui::NextColumn();
-    ImGui::TextColored(cyan, " L'"); ImGui::SameLine();
+    ImGui::TextColored(violet, " L'"); ImGui::SameLine();
     ImGui::Text("$%02X", proc_state->HL2->GetLow());
-    ImGui::Text(BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->HL2->GetLow()));
+    snprintf(buffer, sizeof(buffer), BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->HL2->GetLow()));
+    ImGui::Text("%s", buffer);
 
     ImGui::NextColumn();
     ImGui::Separator();
     ImGui::TextColored(cyan, " I"); ImGui::SameLine();
     ImGui::Text(" $%02X", *proc_state->I);
-    ImGui::Text(BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(*proc_state->I));
+    snprintf(buffer, sizeof(buffer), BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(*proc_state->I));
+    ImGui::Text("%s", buffer);
 
     ImGui::NextColumn();
     ImGui::TextColored(cyan, " R"); ImGui::SameLine();
     ImGui::Text(" $%02X", *proc_state->R);
-    ImGui::Text(BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(*proc_state->R));
+    snprintf(buffer, sizeof(buffer), BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(*proc_state->R));
+    ImGui::Text("%s", buffer);
 
     ImGui::NextColumn();
     ImGui::Columns(1);
@@ -860,27 +737,32 @@ static void debug_window_processor(void)
     ImGui::Separator();
     ImGui::TextColored(yellow, "    IX"); ImGui::SameLine();
     ImGui::Text("= $%04X", proc_state->IX->GetValue());
-    ImGui::Text(BYTE_TO_BINARY_PATTERN_SPACED " " BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->IX->GetHigh()), BYTE_TO_BINARY(proc_state->IX->GetLow()));
+    snprintf(buffer, sizeof(buffer), BYTE_TO_BINARY_PATTERN_SPACED " " BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->IX->GetHigh()), BYTE_TO_BINARY(proc_state->IX->GetLow()));
+    ImGui::Text("%s", buffer);
 
     ImGui::Separator();
     ImGui::TextColored(yellow, "    IY"); ImGui::SameLine();
     ImGui::Text("= $%04X", proc_state->IY->GetValue());
-    ImGui::Text(BYTE_TO_BINARY_PATTERN_SPACED " " BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->IY->GetHigh()), BYTE_TO_BINARY(proc_state->IY->GetLow()));
+    snprintf(buffer, sizeof(buffer), BYTE_TO_BINARY_PATTERN_SPACED " " BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->IY->GetHigh()), BYTE_TO_BINARY(proc_state->IY->GetLow()));
+    ImGui::Text("%s", buffer);
 
     ImGui::Separator();
     ImGui::TextColored(yellow, "    WZ"); ImGui::SameLine();
     ImGui::Text("= $%04X", proc_state->WZ->GetValue());
-    ImGui::Text(BYTE_TO_BINARY_PATTERN_SPACED " " BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->WZ->GetHigh()), BYTE_TO_BINARY(proc_state->WZ->GetLow()));
+    snprintf(buffer, sizeof(buffer), BYTE_TO_BINARY_PATTERN_SPACED " " BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->WZ->GetHigh()), BYTE_TO_BINARY(proc_state->WZ->GetLow()));
+    ImGui::Text("%s", buffer);
 
     ImGui::Separator();
     ImGui::TextColored(yellow, "    SP"); ImGui::SameLine();
     ImGui::Text("= $%04X", proc_state->SP->GetValue());
-    ImGui::Text(BYTE_TO_BINARY_PATTERN_SPACED " " BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->SP->GetHigh()), BYTE_TO_BINARY(proc_state->SP->GetLow()));
+    snprintf(buffer, sizeof(buffer), BYTE_TO_BINARY_PATTERN_SPACED " " BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->SP->GetHigh()), BYTE_TO_BINARY(proc_state->SP->GetLow()));
+    ImGui::Text("%s", buffer);
 
     ImGui::Separator();
     ImGui::TextColored(yellow, "    PC"); ImGui::SameLine();
     ImGui::Text("= $%04X", proc_state->PC->GetValue());
-    ImGui::Text(BYTE_TO_BINARY_PATTERN_SPACED " " BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->PC->GetHigh()), BYTE_TO_BINARY(proc_state->PC->GetLow()));
+    snprintf(buffer, sizeof(buffer), BYTE_TO_BINARY_PATTERN_SPACED " " BYTE_TO_BINARY_PATTERN_SPACED, BYTE_TO_BINARY(proc_state->PC->GetHigh()), BYTE_TO_BINARY(proc_state->PC->GetLow()));
+    ImGui::Text("%s", buffer);
 
     ImGui::Separator();
 
@@ -924,14 +806,14 @@ static void debug_window_vram(void)
     Video* video = emu_get_core()->GetVideo();
     u8* regs = video->GetRegisters();
 
-    ImGui::TextColored(cyan, "  VIDEO MODE:");ImGui::SameLine();
+    ImGui::TextColored(light_brown, "  VIDEO MODE:");ImGui::SameLine();
     ImGui::Text("$%02X", video->GetMode()); ImGui::SameLine();
 
-    ImGui::TextColored(magenta, "  M1:");ImGui::SameLine();
+    ImGui::TextColored(cyan, "  M1:");ImGui::SameLine();
     ImGui::Text("%d", (regs[1] >> 4) & 0x01); ImGui::SameLine();
-    ImGui::TextColored(magenta, "  M2:");ImGui::SameLine();
+    ImGui::TextColored(cyan, "  M2:");ImGui::SameLine();
     ImGui::Text("%d", (regs[0] >> 1) & 0x01); ImGui::SameLine();
-    ImGui::TextColored(magenta, "  M3:");ImGui::SameLine();
+    ImGui::TextColored(cyan, "  M3:");ImGui::SameLine();
     ImGui::Text("%d", (regs[1] >> 3) & 0x01);
 
     ImGui::PopFont();
@@ -1038,7 +920,7 @@ static void debug_window_vram_background(void)
 
         ImGui::Image((ImTextureID)(intptr_t)renderer_emu_debug_vram_background, ImVec2(tile_width * 16.0f, 128.0f), ImVec2(uv_h * tile_x, uv_v * tile_y), ImVec2(uv_h * (tile_x + 1), uv_v * (tile_y + 1)));
 
-        ImGui::TextColored(yellow, "INFO:");
+        ImGui::TextColored(light_brown, "INFO:");
 
         ImGui::TextColored(cyan, " X:"); ImGui::SameLine();
         ImGui::Text("$%02X", tile_x);
@@ -1084,8 +966,7 @@ static void debug_window_vram_background(void)
 
         if (ImGui::IsMouseClicked(0))
         {
-            mem_edit_select = 4;
-            mem_edit[4].JumpToAddress(name_tile_addr);
+            gui_debug_memory_goto(MEMORY_EDITOR_VRAM, name_tile_addr);
         }
     }
 
@@ -1160,7 +1041,7 @@ static void debug_window_vram_tiles(void)
 
         ImGui::Image((ImTextureID)(intptr_t)renderer_emu_debug_vram_tiles, ImVec2(128.0f, 128.0f), ImVec2((1.0f / 32.0f) * tile_x, (1.0f / 32.0f) * tile_y), ImVec2((1.0f / 32.0f) * (tile_x + 1), (1.0f / 32.0f) * (tile_y + 1)));
 
-        ImGui::TextColored(yellow, "DETAILS:");
+        ImGui::TextColored(light_brown, "DETAILS:");
 
         int tile = (tile_y << 5) + tile_x;
 
@@ -1173,8 +1054,7 @@ static void debug_window_vram_tiles(void)
 
         if (ImGui::IsMouseClicked(0))
         {
-            mem_edit_select = 4;
-            mem_edit[4].JumpToAddress(tile_addr);
+            gui_debug_memory_goto(MEMORY_EDITOR_VRAM, tile_addr);
         }
     }
 
@@ -1308,7 +1188,7 @@ static void debug_window_vram_sprites(void)
             ImDrawList* draw_list = ImGui::GetWindowDrawList();
             draw_list->AddRect(ImVec2(rectx_min, recty_min), ImVec2(rectx_max, recty_max), ImColor(cyan), 2.0f, ImDrawFlags_RoundCornersAll, 2.0f);
 
-            ImGui::TextColored(yellow, "DETAILS:");
+            ImGui::TextColored(light_brown, "DETAILS:");
             ImGui::TextColored(cyan, " Attribute Addr:"); ImGui::SameLine();
             ImGui::Text("$%04X", sprite_attribute_offset);
 
@@ -1331,8 +1211,7 @@ static void debug_window_vram_sprites(void)
 
             if (ImGui::IsMouseClicked(0))
             {
-                mem_edit_select = 4;
-                mem_edit[4].JumpToAddress(sprite_tile_addr);
+                gui_debug_memory_goto(MEMORY_EDITOR_VRAM, sprite_tile_addr);
             }
         }
     }
@@ -1349,31 +1228,31 @@ static void debug_window_vram_regs(void)
     Video* video = emu_get_core()->GetVideo();
     u8* regs = video->GetRegisters();
 
-    ImGui::TextColored(yellow, "VDP STATE:");
+    ImGui::TextColored(light_brown, "VDP STATE:");
 
-    ImGui::TextColored(cyan, " PAL (50Hz)       "); ImGui::SameLine();
+    ImGui::TextColored(violet, " PAL (50Hz)       "); ImGui::SameLine();
     video->IsPAL() ? ImGui::TextColored(green, "YES ") : ImGui::TextColored(gray, "NO  ");
-    ImGui::TextColored(cyan, " LATCH FIRST BYTE "); ImGui::SameLine();
+    ImGui::TextColored(violet, " LATCH FIRST BYTE "); ImGui::SameLine();
     video->GetLatch() ? ImGui::TextColored(green, "YES ") : ImGui::TextColored(gray, "NO  ");
-    ImGui::TextColored(cyan, " INTERNAL BUFFER  "); ImGui::SameLine();
+    ImGui::TextColored(violet, " INTERNAL BUFFER  "); ImGui::SameLine();
     ImGui::Text("$%02X (" BYTE_TO_BINARY_PATTERN_SPACED ")", video->GetBufferReg(), BYTE_TO_BINARY(video->GetBufferReg()));
-    ImGui::TextColored(cyan, " INTERNAL STATUS  "); ImGui::SameLine();
+    ImGui::TextColored(violet, " INTERNAL STATUS  "); ImGui::SameLine();
     ImGui::Text("$%02X (" BYTE_TO_BINARY_PATTERN_SPACED ")", video->GetStatusReg(), BYTE_TO_BINARY(video->GetStatusReg()));
-    ImGui::TextColored(cyan, " INTERNAL ADDRESS "); ImGui::SameLine();
+    ImGui::TextColored(violet, " INTERNAL ADDRESS "); ImGui::SameLine();
     ImGui::Text("$%04X", video->GetAddressReg());
-    ImGui::TextColored(cyan, " RENDER LINE      "); ImGui::SameLine();
+    ImGui::TextColored(violet, " RENDER LINE      "); ImGui::SameLine();
     ImGui::Text("%d", video->GetRenderLine());
-    ImGui::TextColored(cyan, " CYCLE COUNTER    "); ImGui::SameLine();
+    ImGui::TextColored(violet, " CYCLE COUNTER    "); ImGui::SameLine();
     ImGui::Text("%d", video->GetCycleCounter());
 
-    ImGui::TextColored(yellow, "VDP REGISTERS:");
+    ImGui::TextColored(light_brown, "VDP REGISTERS:");
 
     const char* reg_desc[] = {"CONTROL 0   ", "CONTROL 1   ", "PATTERN NAME", "COLOR TABLE ", "PATTERN GEN ", "SPRITE ATTR ", "SPRITE GEN  ", "COLORS      "};
 
     for (int i = 0; i < 8; i++)
     {
         ImGui::TextColored(cyan, " $%01X ", i); ImGui::SameLine();
-        ImGui::TextColored(magenta, "%s ", reg_desc[i]); ImGui::SameLine();
+        ImGui::TextColored(violet, "%s ", reg_desc[i]); ImGui::SameLine();
         ImGui::Text("$%02X (" BYTE_TO_BINARY_PATTERN_SPACED ")", regs[i], BYTE_TO_BINARY(regs[i]));
     }
 
@@ -1382,7 +1261,7 @@ static void debug_window_vram_regs(void)
 
 static void add_symbol(const char* line)
 {
-    Log("Loading symbol %s", line);
+    Debug("Loading symbol %s", line);
 
     DebugSymbol s;
 
@@ -1442,7 +1321,6 @@ static void add_breakpoint_cpu(void)
 {
     int input_len = (int)strlen(brk_address_cpu);
     u16 target_address = 0;
-    int target_bank = 0;
 
     try
     {
@@ -1454,14 +1332,10 @@ static void add_breakpoint_cpu(void)
             if (separator != std::string::npos)
             {
                 target_address = (u16)std::stoul(str.substr(separator + 1 , std::string::npos), 0, 16);
-
-                target_bank = std::stoul(str.substr(0, separator), 0 , 16);
-                target_bank &= 0xFF;
             }
         } 
         else if (input_len == 4)
         {
-            target_bank = 0; 
             target_address = (u16)std::stoul(brk_address_cpu, 0, 16);
         }
         else

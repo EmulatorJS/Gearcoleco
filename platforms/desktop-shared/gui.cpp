@@ -20,7 +20,9 @@
 #include <math.h>
 #include "imgui/imgui.h"
 #include "imgui/fonts/RobotoMedium.h"
+#include "imgui/keyboard.h"
 #include "nfd/nfd.h"
+#include "nfd/nfd_sdl2.h"
 #include "config.h"
 #include "emu.h"
 #include "../../src/gearcoleco.h"
@@ -29,6 +31,8 @@
 #include "license.h"
 #include "backers.h"
 #include "gui_debug.h"
+#include "gui_debug_memory.h"
+#include "gui_debug_constants.h"
 
 #define GUI_IMPORT
 #include "gui.h"
@@ -61,6 +65,7 @@ static void file_dialog_choose_savestate_path(void);
 static void file_dialog_load_bios(void);
 static void file_dialog_load_symbols(void);
 static void file_dialog_save_screenshot(void);
+static void file_dialog_set_native_window(SDL_Window* window, nfdwindowhandle_t* native_window);
 static void keyboard_configuration_item(const char* text, SDL_Scancode* key, int player);
 static void gamepad_configuration_item(const char* text, int* button, int player);
 static void popup_modal_keyboard();
@@ -79,6 +84,8 @@ static void show_fps(void);
 static void show_status_message(void);
 static Cartridge::CartridgeRegions get_region(int index);
 static void call_save_screenshot(const char* path);
+static void set_style(void);
+static ImVec4 lerp(const ImVec4& a, const ImVec4& b, float t);
 
 void gui_init(void)
 {
@@ -115,6 +122,7 @@ void gui_init(void)
     gui_default_font = default_font[config_debug.font_size];
 
     update_palette();
+    set_style();
 
     emu_audio_mute(!config_audio.enable);
 
@@ -126,6 +134,8 @@ void gui_init(void)
         emu_load_bios(bios_path);
 
     emu_set_overscan(config_debug.debug ? 0 : config_video.overscan);
+
+    gui_debug_memory_init();
 }
 
 void gui_destroy(void)
@@ -206,7 +216,10 @@ void gui_shortcut(gui_ShortCutEvent event)
         break;
     case gui_ShortcutDebugNextFrame:
         if (config_debug.debug)
+        {
             emu_debug_next_frame();
+            gui_debug_memory_step_frame();
+        }
         break;
     case gui_ShortcutDebugBreakpoint:
         if (config_debug.debug)
@@ -221,10 +234,12 @@ void gui_shortcut(gui_ShortCutEvent event)
             gui_debug_go_back();
         break;
     case gui_ShortcutDebugCopy:
-        gui_debug_copy_memory();
+        if (config_debug.debug)
+            gui_debug_memory_copy();
         break;
     case gui_ShortcutDebugPaste:
-        gui_debug_paste_memory();
+        if (config_debug.debug)
+            gui_debug_memory_paste();
         break;
     case gui_ShortcutShowMainMenu:
         config_emulator.show_menu = !config_emulator.show_menu;
@@ -264,6 +279,13 @@ void gui_load_rom(const char* path)
         {
             emu_frame_buffer[i] = 0;
         }
+    }
+
+    if (!emu_is_empty())
+    {
+        char title[256];
+        snprintf(title, 256, "%s %s - %s", GEARCOLECO_TITLE, GEARCOLECO_VERSION, emu_get_core()->GetCartridge()->GetFileName());
+        application_update_title(title);
     }
 }
 
@@ -515,10 +537,8 @@ static void main_menu(void)
 
             if (ImGui::MenuItem("Resize Window to Content"))
             {
-                if (!config_debug.debug && (config_video.ratio != 3))
-                {
+                if (!config_debug.debug)
                     application_trigger_fit_to_content(main_window_width, main_window_height + main_menu_height);
-                }
             }
 
             ImGui::Separator();
@@ -536,7 +556,7 @@ static void main_menu(void)
             if (ImGui::BeginMenu("Aspect Ratio"))
             {
                 ImGui::PushItemWidth(160.0f);
-                ImGui::Combo("##ratio", &config_video.ratio, "Square Pixels (1:1 PAR)\0Standard (4:3 DAR)\0Wide (16:9 DAR)\0\0");
+                ImGui::Combo("##ratio", &config_video.ratio, "Square Pixels (1:1 PAR)\0Standard (4:3 DAR)\0Wide (16:9 DAR)\0Wide (16:10 DAR)\0\0");
                 ImGui::PopItemWidth();
                 ImGui::EndMenu();
             }
@@ -585,6 +605,7 @@ static void main_menu(void)
             if (ImGui::BeginMenu("Scanlines"))
             {
                 ImGui::MenuItem("Enable Scanlines", "", &config_video.scanlines);
+                ImGui::MenuItem("Enable Scanlines Filter", "", &config_video.scanlines_filter);
                 ImGui::SliderFloat("##scanlines", &config_video.scanlines_intensity, 0.0f, 1.0f, "Intensity = %.2f");
                 ImGui::EndMenu();
             }
@@ -607,7 +628,7 @@ static void main_menu(void)
                 for (int i = 0; i < 16; i++)
                 {
                     char text[10] = {0};
-                    sprintf(text,"Color #%d", i + 1);
+                    snprintf(text, sizeof(text),"Color #%d", i + 1);
                     if (ImGui::ColorEdit3(text, (float*)&custom_palette[i], ImGuiColorEditFlags_NoInputs))
                     {
                         update_palette();
@@ -836,6 +857,7 @@ static void main_menu(void)
             if (ImGui::MenuItem("Step Frame", "CTRL + F6", (void*)0, config_debug.debug))
             {
                 emu_debug_next_frame();
+                gui_debug_memory_step_frame();
             }
 
             if (ImGui::MenuItem("Continue", "CTRL + F5", (void*)0, config_debug.debug))
@@ -1007,6 +1029,9 @@ static void main_window(void)
         case 2:
             ratio = 16.0f / 9.0f;
             break;
+        case 3:
+            ratio = 16.0f / 10.0f;
+            break;
         default:
             ratio = (float)runtime.screen_width / (float)runtime.screen_height;
     }
@@ -1044,7 +1069,7 @@ static void main_window(void)
         case 2:
             scale_multiplier = 1;
             h_corrected = h;
-            w_corrected = h * ratio;
+            w_corrected = (int)(h * ratio);
             break;
         case 3:
             scale_multiplier = 1;
@@ -1112,7 +1137,13 @@ static void file_dialog_open_rom(void)
 {
     nfdchar_t *outPath;
     nfdfilteritem_t filterItem[1] = { { "ROM Files", "col,cv,rom,bin,zip" } };
-    nfdresult_t result = NFD_OpenDialog(&outPath, filterItem, 1, config_emulator.last_open_path.c_str());
+    nfdopendialogu8args_t args = { };
+    args.filterList = filterItem;
+    args.filterCount = 1;
+    args.defaultPath = config_emulator.last_open_path.c_str();
+    file_dialog_set_native_window(application_sdl_window, &args.parentWindow);
+
+    nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
     if (result == NFD_OKAY)
     {
         std::string path = outPath;
@@ -1131,7 +1162,13 @@ static void file_dialog_load_ram(void)
 {
     nfdchar_t *outPath;
     nfdfilteritem_t filterItem[1] = { { "RAM Files", "sav" } };
-    nfdresult_t result = NFD_OpenDialog(&outPath, filterItem, 1, NULL);
+    nfdopendialogu8args_t args = { };
+    args.filterList = filterItem;
+    args.filterCount = 1;
+    args.defaultPath = config_emulator.last_open_path.c_str();
+    file_dialog_set_native_window(application_sdl_window, &args.parentWindow);
+
+    nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
     if (result == NFD_OKAY)
     {
         Cartridge::ForceConfiguration config;
@@ -1151,7 +1188,14 @@ static void file_dialog_save_ram(void)
 {
     nfdchar_t *outPath;
     nfdfilteritem_t filterItem[1] = { { "RAM Files", "sav" } };
-    nfdresult_t result = NFD_SaveDialog(&outPath, filterItem, 1, NULL, NULL);
+    nfdsavedialogu8args_t args = { };
+    args.filterList = filterItem;
+    args.filterCount = 1;
+    args.defaultPath = config_emulator.last_open_path.c_str();
+    args.defaultName = NULL;
+    file_dialog_set_native_window(application_sdl_window, &args.parentWindow);
+
+    nfdresult_t result = NFD_SaveDialogU8_With(&outPath, &args);
     if (result == NFD_OKAY)
     {
         emu_save_ram(outPath);
@@ -1167,7 +1211,13 @@ static void file_dialog_load_state(void)
 {
     nfdchar_t *outPath;
     nfdfilteritem_t filterItem[1] = { { "Save State Files", "state" } };
-    nfdresult_t result = NFD_OpenDialog(&outPath, filterItem, 1, NULL);
+    nfdopendialogu8args_t args = { };
+    args.filterList = filterItem;
+    args.filterCount = 1;
+    args.defaultPath = config_emulator.last_open_path.c_str();
+    file_dialog_set_native_window(application_sdl_window, &args.parentWindow);
+
+    nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
     if (result == NFD_OKAY)
     {
         std::string message("Loading state from ");
@@ -1186,7 +1236,14 @@ static void file_dialog_save_state(void)
 {
     nfdchar_t *outPath;
     nfdfilteritem_t filterItem[1] = { { "Save State Files", "state" } };
-    nfdresult_t result = NFD_SaveDialog(&outPath, filterItem, 1, NULL, NULL);
+    nfdsavedialogu8args_t args = { };
+    args.filterList = filterItem;
+    args.filterCount = 1;
+    args.defaultPath = config_emulator.last_open_path.c_str();
+    args.defaultName = NULL;
+    file_dialog_set_native_window(application_sdl_window, &args.parentWindow);
+
+    nfdresult_t result = NFD_SaveDialogU8_With(&outPath, &args);
     if (result == NFD_OKAY)
     {
         std::string message("Saving state to ");
@@ -1204,7 +1261,11 @@ static void file_dialog_save_state(void)
 static void file_dialog_choose_savestate_path(void)
 {
     nfdchar_t *outPath;
-    nfdresult_t result = NFD_PickFolder(&outPath, savestates_path);
+    nfdpickfolderu8args_t args = { };
+    args.defaultPath = savestates_path;
+    file_dialog_set_native_window(application_sdl_window, &args.parentWindow);
+
+    nfdresult_t result = NFD_PickFolderU8_With(&outPath, &args);
     if (result == NFD_OKAY)
     {
         strcpy(savestates_path, outPath);
@@ -1221,7 +1282,13 @@ static void file_dialog_load_bios(void)
 {
     nfdchar_t *outPath;
     nfdfilteritem_t filterItem[1] = { { "BIOS Files", "bin,rom,bios,cv,col" } };
-    nfdresult_t result = NFD_OpenDialog(&outPath, filterItem, 1, NULL);
+    nfdopendialogu8args_t args = { };
+    args.filterList = filterItem;
+    args.filterCount = 1;
+    args.defaultPath = config_emulator.last_open_path.c_str();
+    file_dialog_set_native_window(application_sdl_window, &args.parentWindow);
+
+    nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
     if (result == NFD_OKAY)
     {
         strcpy(bios_path, outPath);
@@ -1231,7 +1298,7 @@ static void file_dialog_load_bios(void)
     }
     else if (result != NFD_CANCEL)
     {
-        Log("Load SMS Bios Error: %s", NFD_GetError());
+        Log("Load Bios Error: %s", NFD_GetError());
     }
 }
 
@@ -1239,7 +1306,13 @@ static void file_dialog_load_symbols(void)
 {
     nfdchar_t *outPath;
     nfdfilteritem_t filterItem[1] = { { "Symbol Files", "sym" } };
-    nfdresult_t result = NFD_OpenDialog(&outPath, filterItem, 1, NULL);
+    nfdopendialogu8args_t args = { };
+    args.filterList = filterItem;
+    args.filterCount = 1;
+    args.defaultPath = NULL;
+    file_dialog_set_native_window(application_sdl_window, &args.parentWindow);
+
+    nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
     if (result == NFD_OKAY)
     {
         gui_debug_reset_symbols();
@@ -1256,7 +1329,14 @@ static void file_dialog_save_screenshot(void)
 {
     nfdchar_t *outPath;
     nfdfilteritem_t filterItem[1] = { { "PNG Files", "png" } };
-    nfdresult_t result = NFD_SaveDialog(&outPath, filterItem, 1, NULL, NULL);
+    nfdsavedialogu8args_t args = { };
+    args.filterList = filterItem;
+    args.filterCount = 1;
+    args.defaultPath = NULL;
+    args.defaultName = NULL;
+    file_dialog_set_native_window(application_sdl_window, &args.parentWindow);
+
+    nfdresult_t result = NFD_SaveDialogU8_With(&outPath, &args);
     if (result == NFD_OKAY)
     {
         call_save_screenshot(outPath);
@@ -1268,18 +1348,36 @@ static void file_dialog_save_screenshot(void)
     }
 }
 
+static void file_dialog_set_native_window(SDL_Window* window, nfdwindowhandle_t* native_window)
+{
+    if (!NFD_GetNativeWindowFromSDLWindow(window, native_window))
+    {
+        Log("NFD_GetNativeWindowFromSDLWindow failed: %s\n", SDL_GetError());
+    }
+}
+
 static void keyboard_configuration_item(const char* text, SDL_Scancode* key, int player)
 {
     ImGui::Text("%s", text);
     ImGui::SameLine(100);
 
     char button_label[256];
-    sprintf(button_label, "%s##%s%d", SDL_GetScancodeName(*key), text, player);
+    snprintf(button_label, sizeof(button_label), "%s##%s%d", SDL_GetKeyName(SDL_GetKeyFromScancode(*key)), text, player);
 
     if (ImGui::Button(button_label, ImVec2(90,0)))
     {
         configured_key = key;
         ImGui::OpenPopup("Keyboard Configuration");
+    }
+
+    ImGui::SameLine();
+
+    char remove_label[256];
+    snprintf(remove_label, sizeof(remove_label), "X##rk%s%d", text, player);
+
+    if (ImGui::Button(remove_label))
+    {
+        *key = SDL_SCANCODE_UNKNOWN;
     }
 }
 
@@ -1288,15 +1386,27 @@ static void gamepad_configuration_item(const char* text, int* button, int player
     ImGui::Text("%s", text);
     ImGui::SameLine(100);
 
-    static const char* gamepad_names[16] = {"A", "B", "X" ,"Y", "BACK", "GUID", "START", "L3", "R3", "L1", "R1", "UP", "DOWN", "LEFT", "RIGHT", "15"};
+    static const char* gamepad_names[16] = {"A", "B", "X" ,"Y", "BACK", "GUIDE", "START", "L3", "R3", "L1", "R1", "UP", "DOWN", "LEFT", "RIGHT", "15"};
+
+    const char* button_name = (*button >= 0 && *button < 16) ? gamepad_names[*button] : "";
 
     char button_label[256];
-    sprintf(button_label, "%s##%s%d", gamepad_names[*button], text, player);
+    snprintf(button_label, sizeof(button_label), "%s##%s%d", button_name, text, player);
 
     if (ImGui::Button(button_label, ImVec2(70,0)))
     {
         configured_button = button;
         ImGui::OpenPopup("Gamepad Configuration");
+    }
+
+    ImGui::SameLine();
+
+    char remove_label[256];
+    snprintf(remove_label, sizeof(remove_label), "X##rg%s%d", text, player);
+
+    if (ImGui::Button(remove_label))
+    {
+        *button = SDL_CONTROLLER_BUTTON_INVALID;
     }
 }
 
@@ -1307,11 +1417,12 @@ static void popup_modal_keyboard()
         ImGui::Text("Press any key to assign...\n\n");
         ImGui::Separator();
 
-        for ( int i = 0; i < ImGuiKey_NamedKey_END; ++i )
+        for (ImGuiKey i = ImGuiKey_NamedKey_BEGIN; i < ImGuiKey_NamedKey_END; i = (ImGuiKey)(i + 1))
         {
-            if (ImGui::IsKeyDown((ImGuiKey)i))
+            if (ImGui::IsKeyDown(i))
             {
-                SDL_Scancode key = (SDL_Scancode)i;
+                SDL_Keycode key_code = ImGuiKeyToSDLKeycode(i);
+                SDL_Scancode key = SDL_GetScancodeFromKey(key_code);
 
                 if ((key != SDL_SCANCODE_LCTRL) && (key != SDL_SCANCODE_RCTRL) && (key != SDL_SCANCODE_CAPSLOCK))
                 {
@@ -1359,18 +1470,115 @@ static void popup_modal_about(void)
 {
     if (ImGui::BeginPopupModal("About " GEARCOLECO_TITLE, NULL, ImGuiWindowFlags_AlwaysAutoResize))
     {
-        ImGui::Text("%s %s", GEARCOLECO_TITLE, GEARCOLECO_VERSION);
-        ImGui::Text("Build: %s", EMULATOR_BUILD);
-        
-        ImGui::Separator();
-        
-        ImGui::Text("By Ignacio Sánchez (twitter.com/drhelius)");
-        ImGui::Text("%s is licensed under the GPL-3.0 License, see LICENSE for more information.", GEARCOLECO_TITLE);
-        
-        ImGui::Separator();
+        ImGui::PushFont(gui_default_font);
+        ImGui::TextColored(cyan, "%s\n", GEARCOLECO_TITLE_ASCII);
+
+        ImGui::TextColored(orange, "  By Ignacio Sánchez (DrHelius)");
+        ImGui::Text(" "); ImGui::SameLine();
+        ImGui::TextLinkOpenURL("https://github.com/drhelius/Gearcoleco");
+        ImGui::Text(" "); ImGui::SameLine();
+        ImGui::TextLinkOpenURL("https://x.com/drhelius");
+        ImGui::NewLine();
+
+        ImGui::PopFont();
 
         if (ImGui::BeginTabBar("##Tabs", ImGuiTabBarFlags_None))
         {
+            if (ImGui::BeginTabItem("Build Info"))
+            {
+                ImGui::BeginChild("build", ImVec2(0, 100), false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
+
+                ImGui::Text("Build: %s", GEARCOLECO_VERSION);
+
+                #if defined(__DATE__) && defined(__TIME__)
+                ImGui::Text("Built on: %s - %s", __DATE__, __TIME__);
+                #endif
+                #if defined(_M_ARM64)
+                ImGui::Text("Windows ARM64 build");
+                #endif
+                #if defined(_M_X64)
+                ImGui::Text("Windows 64 bit build");
+                #endif
+                #if defined(_M_IX86)
+                ImGui::Text("Windows 32 bit build");
+                #endif
+                #if defined(__linux__) && defined(__x86_64__)
+                ImGui::Text("Linux 64 bit build");
+                #endif
+                #if defined(__linux__) && defined(__i386__)
+                ImGui::Text("Linux 32 bit build");
+                #endif
+                #if defined(__linux__) && defined(__arm__)
+                ImGui::Text("Linux ARM build");
+                #endif
+                #if defined(__linux__) && defined(__aarch64__)
+                ImGui::Text("Linux ARM64 build");
+                #endif
+                #if defined(__APPLE__) && defined(__arm64__ )
+                ImGui::Text("macOS build (Apple Silicon)");
+                #endif
+                #if defined(__APPLE__) && defined(__x86_64__)
+                ImGui::Text("macOS build (Intel)");
+                #endif
+                #if defined(__ANDROID__)
+                ImGui::Text("Android build");
+                #endif
+                #if defined(_MSC_FULL_VER)
+                ImGui::Text("Microsoft C++ %d", _MSC_FULL_VER);
+                #endif
+                #if defined(_MSVC_LANG)
+                ImGui::Text("MSVC %d", _MSVC_LANG);
+                #endif
+                #if defined(__CLR_VER)
+                ImGui::Text("CLR version: %d", __CLR_VER);
+                #endif
+                #if defined(__MINGW32__)
+                ImGui::Text("MinGW 32 bit (%d.%d)", __MINGW32_MAJOR_VERSION, __MINGW32_MINOR_VERSION);
+                #endif
+                #if defined(__MINGW64__)
+                ImGui::Text("MinGW 64 bit (%d.%d)", __MINGW64_VERSION_MAJOR, __MINGW64_VERSION_MINOR);
+                #endif
+                #if defined(__GNUC__) && !defined(__llvm__) && !defined(__INTEL_COMPILER)
+                ImGui::Text("GCC %d.%d.%d", (int)__GNUC__, (int)__GNUC_MINOR__, (int)__GNUC_PATCHLEVEL__);
+                #endif
+                #if defined(__clang_version__)
+                ImGui::Text("Clang %s", __clang_version__);
+                #endif
+                ImGui::Text("SDL %d.%d.%d (build)", application_sdl_build_version.major, application_sdl_build_version.minor, application_sdl_build_version.patch);
+                ImGui::Text("SDL %d.%d.%d (link) ", application_sdl_link_version.major, application_sdl_link_version.minor, application_sdl_link_version.patch);
+                ImGui::Text("OpenGL %s", renderer_opengl_version);
+                #if !defined(__APPLE__)
+                ImGui::Text("GLEW %s", renderer_glew_version);
+                #endif
+                ImGui::Text("Dear ImGui %s (%d)", IMGUI_VERSION, IMGUI_VERSION_NUM);
+
+                #if defined(DEBUG)
+                ImGui::Text("define: DEBUG");
+                #endif
+                #if defined(DEBUG_GEARCOLECO)
+                ImGui::Text("define: DEBUG_GEARCOLECO");
+                #endif
+                #if defined(GEARCOLECO_NO_OPTIMIZATIONS)
+                ImGui::Text("define: GEARCOLECO_NO_OPTIMIZATIONS");
+                #endif
+                #if defined(__cplusplus)
+                ImGui::Text("define: __cplusplus = %d", (int)__cplusplus);
+                #endif
+                #if defined(__STDC__)
+                ImGui::Text("define: __STDC__ = %d", (int)__STDC__);
+                #endif
+                #if defined(__STDC_VERSION__)
+                ImGui::Text("define: __STDC_VERSION__ = %d", (int)__STDC_VERSION__);
+                #endif
+                #if defined(IS_LITTLE_ENDIAN)
+                ImGui::Text("define: IS_LITTLE_ENDIAN");
+                #endif
+                #if defined(IS_BIG_ENDIAN)
+                ImGui::Text("define: IS_BIG_ENDIAN");
+                #endif
+                ImGui::EndChild();
+                ImGui::EndTabItem();
+            }
             if (ImGui::BeginTabItem("Special thanks to"))
             {
                 ImGui::BeginChild("backers", ImVec2(0, 100), false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
@@ -1388,101 +1596,27 @@ static void popup_modal_about(void)
             ImGui::EndTabBar();
         }
 
-        ImGui::Separator();
-
-        #if defined(_M_ARM64)
-        ImGui::Text("Windows ARM64 build");
-        #endif
-        #if defined(_M_X64)
-        ImGui::Text("Windows 64 bit build");
-        #endif
-        #if defined(_M_IX86)
-        ImGui::Text("Windows 32 bit build");
-        #endif
-        #if defined(__linux__) && defined(__x86_64__)
-        ImGui::Text("Linux 64 bit build");
-        #endif
-        #if defined(__linux__) && defined(__i386__)
-        ImGui::Text("Linux 32 bit build");
-        #endif
-        #if defined(__linux__) && defined(__arm__)
-        ImGui::Text("Linux ARM build");
-        #endif
-        #if defined(__linux__) && defined(__aarch64__)
-        ImGui::Text("Linux ARM64 build");
-        #endif
-        #if defined(__APPLE__) && defined(__arm64__ )
-        ImGui::Text("macOS build (Apple Silicon)");
-        #endif
-        #if defined(__APPLE__) && defined(__x86_64__)
-        ImGui::Text("macOS build (Intel)");
-        #endif
-        #if defined(_MSC_FULL_VER)
-        ImGui::Text("Microsoft C++ %d", _MSC_FULL_VER);
-        #endif
-        #if defined(__CLR_VER)
-        ImGui::Text("CLR version: %d", __CLR_VER);
-        #endif
-        #if defined(__MINGW32__)
-        ImGui::Text("MinGW 32 bit (%d.%d)", __MINGW32_MAJOR_VERSION, __MINGW32_MINOR_VERSION);
-        #endif
-        #if defined(__MINGW64__)
-        ImGui::Text("MinGW 64 bit (%d.%d)", __MINGW64_VERSION_MAJOR, __MINGW64_VERSION_MINOR);
-        #endif
-        #if defined(__GNUC__) && !defined(__llvm__) && !defined(__INTEL_COMPILER)
-        ImGui::Text("GCC %d.%d.%d", (int)__GNUC__, (int)__GNUC_MINOR__, (int)__GNUC_PATCHLEVEL__);
-        #endif
-        #if defined(__clang_version__)
-        ImGui::Text("Clang %s", __clang_version__);
-        #endif
-        #if defined(__TIMESTAMP__)
-        ImGui::Text("Generated on: %s", __TIMESTAMP__);
-        #endif
-
-        ImGui::Separator();
-
-        #ifdef DEBUG
-        ImGui::Text("define: DEBUG");
-        #endif
-        #ifdef DEBUG_GEARCOLECO
-        ImGui::Text("define: DEBUG_GEARCOLECO");
-        #endif
-        #ifdef __cplusplus
-        ImGui::Text("define: __cplusplus = %d", (int)__cplusplus);
-        #endif
-        #ifdef __STDC__
-        ImGui::Text("define: __STDC__ = %d", (int)__STDC__);
-        #endif
-        #ifdef __STDC_VERSION__
-        ImGui::Text("define: __STDC_VERSION__ = %d", (int)__STDC_VERSION__);
-        #endif
-        
-        ImGui::Separator();
-
-        ImGui::Text("SDL %d.%d.%d (build)", application_sdl_build_version.major, application_sdl_build_version.minor, application_sdl_build_version.patch);
-        ImGui::Text("SDL %d.%d.%d (link) ", application_sdl_link_version.major, application_sdl_link_version.minor, application_sdl_link_version.patch);
-        ImGui::Text("OpenGL %s", renderer_opengl_version);
-        #ifndef __APPLE__
-        ImGui::Text("GLEW %s", renderer_glew_version);
-        #endif
-        ImGui::Text("Dear ImGui %s (%d)", IMGUI_VERSION, IMGUI_VERSION_NUM);
-
+        ImGui::NewLine();
         ImGui::Separator();
 
         for (int i = 0; i < 2; i++)
         {
             if (application_gamepad[i])
-                ImGui::Text("Gamepad detected for Player %d", i+1);
+                ImGui::Text("> Gamepad detected for Player %d", i+1);
             else
-                ImGui::Text("No gamepad detected for Player %d", i+1);
+                ImGui::Text("> No gamepad detected for Player %d", i+1);
         }
 
-        if (application_gamepad_mappings > 0)
-            ImGui::Text("%d gamepad mappings loaded", application_gamepad_mappings);
+        if (application_added_gamepad_mappings || application_updated_gamepad_mappings)
+        {
+            ImGui::Text("%d game controller mappings added from gamecontrollerdb.txt", application_added_gamepad_mappings);
+            ImGui::Text("%d game controller mappings updated from gamecontrollerdb.txt", application_updated_gamepad_mappings);
+        }
         else
-            ImGui::Text("Gamepad database not found");
+            ImGui::Text("ERROR: Game controller database not found (gamecontrollerdb.txt)!!");
 
         ImGui::Separator();
+        ImGui::NewLine();
 
         if (ImGui::Button("OK", ImVec2(120, 0))) 
         {
@@ -1725,4 +1859,108 @@ static void call_save_screenshot(const char* path)
 
     string message = "Screenshot saved to " + file_path;
     gui_set_status_message(message.c_str(), 3000);
+}
+
+static void set_style(void)
+{
+    ImGuiStyle& style = ImGui::GetStyle();
+
+    style.Alpha = 1.0f;
+    style.DisabledAlpha = 0.6000000238418579f;
+    style.WindowPadding = ImVec2(8.0f, 8.0f);
+    style.WindowRounding = 4.0f;
+    style.WindowBorderSize = 1.0f;
+    style.WindowMinSize = ImVec2(32.0f, 32.0f);
+    style.WindowTitleAlign = ImVec2(0.0f, 0.5f);
+    style.WindowMenuButtonPosition = ImGuiDir_Left;
+    style.ChildRounding = 0.0f;
+    style.ChildBorderSize = 1.0f;
+    style.PopupRounding = 4.0f;
+    style.PopupBorderSize = 1.0f;
+    style.FramePadding = ImVec2(4.0f, 3.0f);
+    style.FrameRounding = 2.5f;
+    style.FrameBorderSize = 0.0f;
+    style.ItemSpacing = ImVec2(8.0f, 4.0f);
+    style.ItemInnerSpacing = ImVec2(4.0f, 4.0f);
+    style.CellPadding = ImVec2(4.0f, 2.0f);
+    style.IndentSpacing = 21.0f;
+    style.ColumnsMinSpacing = 6.0f;
+    style.ScrollbarSize = 11.0f;
+    style.ScrollbarRounding = 2.5f;
+    style.GrabMinSize = 10.0f;
+    style.GrabRounding = 2.0f;
+    style.TabRounding = 3.5f;
+    style.TabBorderSize = 0.0f;
+    style.TabMinWidthForCloseButton = 0.0f;
+    style.ColorButtonPosition = ImGuiDir_Right;
+    style.ButtonTextAlign = ImVec2(0.5f, 0.5f);
+    style.SelectableTextAlign = ImVec2(0.0f, 0.0f);
+
+    style.Colors[ImGuiCol_Text] = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+    style.Colors[ImGuiCol_TextDisabled] = ImVec4(0.5921568870544434f, 0.5921568870544434f, 0.5921568870544434f, 1.0f);
+    style.Colors[ImGuiCol_WindowBg] = ImVec4(0.060085229575634f, 0.060085229575634f, 0.06008583307266235f, 1.0f);
+    style.Colors[ImGuiCol_ChildBg] = ImVec4(0.05882352963089943f, 0.05882352963089943f, 0.05882352963089943f, 1.0f);
+    style.Colors[ImGuiCol_PopupBg] = ImVec4(0.1176470592617989f, 0.1176470592617989f, 0.1176470592617989f, 1.0f);
+    style.Colors[ImGuiCol_Border] = ImVec4(0.1802574992179871f, 0.1802556961774826f, 0.1802556961774826f, 1.0f);
+    style.Colors[ImGuiCol_BorderShadow] = ImVec4(0.3058823645114899f, 0.3058823645114899f, 0.3058823645114899f, 1.0f);
+    style.Colors[ImGuiCol_FrameBg] = ImVec4(0.1843137294054031f, 0.1843137294054031f, 0.1843137294054031f, 1.0f);
+    style.Colors[ImGuiCol_FrameBgHovered] = ImVec4(0.270386278629303f, 0.2703835666179657f, 0.2703848779201508f, 1.0f);
+    style.Colors[ImGuiCol_FrameBgActive] = ImVec4(0.5764706f, 0.44705882f, 0.36078431f, 1.0f);
+    style.Colors[ImGuiCol_TitleBg] = ImVec4(0.1450980454683304f, 0.1450980454683304f, 0.1490196138620377f, 1.0f);
+    style.Colors[ImGuiCol_TitleBgActive] = ImVec4(0.5764706f, 0.44705882f, 0.36078431f, 1.0f);
+    style.Colors[ImGuiCol_TitleBgCollapsed] = ImVec4(0.1450980454683304f, 0.1450980454683304f, 0.1490196138620377f, 1.0f);
+    style.Colors[ImGuiCol_MenuBarBg] = ImVec4(0.1176470592617989f, 0.1176470592617989f, 0.1176470592617989f, 1.0f);
+    style.Colors[ImGuiCol_ScrollbarBg] = ImVec4(0.1176470592617989f, 0.1176470592617989f, 0.1176470592617989f, 1.0f);
+    style.Colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.6266094446182251f, 0.6266031861305237f, 0.6266063451766968f, 1.0f);
+    style.Colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.9999899864196777f, 0.9999899864196777f, 1.0f, 1.0f);
+    style.Colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.9999899864196777f, 0.9999899864196777f, 1.0f, 1.0f);
+    style.Colors[ImGuiCol_CheckMark] = ImVec4(0.5764706f, 0.44705882f, 0.36078431f, 1.0f);
+    style.Colors[ImGuiCol_SliderGrab] = ImVec4(0.5764706f, 0.44705882f, 0.36078431f, 1.0f);
+    style.Colors[ImGuiCol_SliderGrabActive] = ImVec4(0.5764706f, 0.44705882f, 0.36078431f, 1.0f);
+    style.Colors[ImGuiCol_Button] = ImVec4(0.184547483921051f, 0.184547483921051f, 0.1845493316650391f, 1.0f);
+    style.Colors[ImGuiCol_ButtonHovered] = ImVec4(0.5764706f, 0.44705882f, 0.36078431f, 1.0f);
+    style.Colors[ImGuiCol_ButtonActive] = ImVec4(0.5764706f, 0.44705882f, 0.36078431f, 1.0f);
+    style.Colors[ImGuiCol_Header] = ImVec4(0.1843137294054031f, 0.1843137294054031f, 0.1843137294054031f, 1.0f);
+    style.Colors[ImGuiCol_HeaderHovered] = ImVec4(0.5764706f, 0.44705882f, 0.36078431f, 1.0f);
+    style.Colors[ImGuiCol_HeaderActive] = ImVec4(0.5764706f, 0.44705882f, 0.36078431f, 1.0f);
+    style.Colors[ImGuiCol_Separator] = ImVec4(0.1803921610116959f, 0.1803921610116959f, 0.1803921610116959f, 1.0f);
+    style.Colors[ImGuiCol_SeparatorHovered] = ImVec4(0.1803921610116959f, 0.1803921610116959f, 0.1803921610116959f, 1.0f);
+    style.Colors[ImGuiCol_SeparatorActive] = ImVec4(0.1803921610116959f, 0.1803921610116959f, 0.1803921610116959f, 1.0f);
+    style.Colors[ImGuiCol_ResizeGrip] = ImVec4(0.2489270567893982f, 0.2489245682954788f, 0.2489245682954788f, 1.0f);
+    style.Colors[ImGuiCol_ResizeGripHovered] = ImVec4(1.0f, 0.9999899864196777f, 0.9999899864196777f, 1.0f);
+    style.Colors[ImGuiCol_ResizeGripActive] = ImVec4(1.0f, 0.9999899864196777f, 0.9999899864196777f, 1.0f);
+    style.Colors[ImGuiCol_Tab] = ImVec4(0.1450980454683304f, 0.1450980454683304f, 0.1490196138620377f, 1.0f);
+    style.Colors[ImGuiCol_TabHovered] = ImVec4(0.5764706f, 0.44705882f, 0.36078431f, 1.0f);
+    style.Colors[ImGuiCol_TabActive] = ImVec4(0.5764706f, 0.44705882f, 0.36078431f, 1.0f);
+    style.Colors[ImGuiCol_TabUnfocused] = ImVec4(0.1450980454683304f, 0.1450980454683304f, 0.1490196138620377f, 1.0f);
+    style.Colors[ImGuiCol_TabUnfocusedActive] = ImVec4(0.5764706f, 0.44705882f, 0.36078431f, 1.0f);
+    style.Colors[ImGuiCol_PlotLines] = ImVec4(0.5764706f, 0.44705882f, 0.36078431f, 1.0f);
+    style.Colors[ImGuiCol_PlotLinesHovered] = ImVec4(0.5764706f, 0.44705882f, 0.36078431f, 1.0f);
+    style.Colors[ImGuiCol_PlotHistogram] = ImVec4(0.5764706f, 0.44705882f, 0.36078431f, 1.0f);
+    style.Colors[ImGuiCol_PlotHistogramHovered] = ImVec4(0.5764706f, 0.44705882f, 0.36078431f, 1.0f);
+    style.Colors[ImGuiCol_TableHeaderBg] = ImVec4(0.1882352977991104f, 0.1882352977991104f, 0.2000000029802322f, 1.0f);
+    style.Colors[ImGuiCol_TableBorderStrong] = ImVec4(0.3098039329051971f, 0.3098039329051971f, 0.3490196168422699f, 1.0f);
+    style.Colors[ImGuiCol_TableBorderLight] = ImVec4(0.2274509817361832f, 0.2274509817361832f, 0.2470588237047195f, 1.0f);
+    style.Colors[ImGuiCol_TableRowBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+    style.Colors[ImGuiCol_TableRowBgAlt] = ImVec4(1.0f, 1.0f, 1.0f, 0.05999999865889549f);
+    style.Colors[ImGuiCol_TextSelectedBg] = ImVec4(0.5764706f, 0.44705882f, 0.36078431f, 1.0f);
+    style.Colors[ImGuiCol_DragDropTarget] = ImVec4(0.1450980454683304f, 0.1450980454683304f, 0.1490196138620377f, 1.0f);
+    style.Colors[ImGuiCol_NavHighlight] = ImVec4(0.1450980454683304f, 0.1450980454683304f, 0.1490196138620377f, 1.0f);
+    style.Colors[ImGuiCol_NavWindowingHighlight] = ImVec4(1.0f, 1.0f, 1.0f, 0.699999988079071f);
+    style.Colors[ImGuiCol_NavWindowingDimBg] = ImVec4(0.800000011920929f, 0.800000011920929f, 0.800000011920929f, 0.2000000029802322f);
+    style.Colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.1450980454683304f, 0.1450980454683304f, 0.1490196138620377f, 0.7f);
+
+    style.Colors[ImGuiCol_DockingPreview] = style.Colors[ImGuiCol_HeaderActive] * ImVec4(1.0f, 1.0f, 1.0f, 0.7f);
+    style.Colors[ImGuiCol_DockingEmptyBg] = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);
+    style.Colors[ImGuiCol_TabHovered] = style.Colors[ImGuiCol_HeaderHovered];
+    style.Colors[ImGuiCol_TabSelected] = lerp(style.Colors[ImGuiCol_HeaderActive], style.Colors[ImGuiCol_TitleBgActive], 0.60f);
+    style.Colors[ImGuiCol_TabSelectedOverline] = style.Colors[ImGuiCol_HeaderActive];
+    style.Colors[ImGuiCol_TabDimmed] = lerp(style.Colors[ImGuiCol_Tab], style.Colors[ImGuiCol_TitleBg], 0.80f);
+    style.Colors[ImGuiCol_TabDimmedSelected] = lerp(style.Colors[ImGuiCol_TabSelected], style.Colors[ImGuiCol_TitleBg], 0.40f);
+    style.Colors[ImGuiCol_TabDimmedSelectedOverline] = ImVec4(0.50f, 0.50f, 0.50f, 1.00f);
+}
+
+static ImVec4 lerp(const ImVec4& a, const ImVec4& b, float t)
+{
+    return ImVec4(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t, a.w + (b.w - a.w) * t);
 }

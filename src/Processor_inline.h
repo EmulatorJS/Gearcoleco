@@ -140,7 +140,7 @@ inline void Processor::SetInterruptMode(int mode)
     }
     else
     {
-        Log("--> ** Attempting to set interrupt mode %d", mode);
+        Debug("--> ** Attempting to set interrupt mode %d", mode);
     }
 }
 
@@ -205,6 +205,7 @@ inline void Processor::IncreaseR()
 {
     u8 r = R;
     R = ((r + 1) & 0x7F) | (r & 0x80);
+    m_iTStates++;  // M1 1 cycle wait
 }
 
 inline void Processor::OPCodes_LD(u8* reg1, u8 value)

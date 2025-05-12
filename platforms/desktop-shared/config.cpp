@@ -18,6 +18,7 @@
  */
 
 #include <SDL.h>
+#include <iomanip>
 #include "../../src/gearcoleco.h"
 
 #define MINI_CASE_SENSITIVE
@@ -207,6 +208,7 @@ void config_read(void)
     config_video.mix_frames = read_bool("Video", "MixFrames", true);
     config_video.mix_frames_intensity = read_float("Video", "MixFramesIntensity", 0.60f);
     config_video.scanlines = read_bool("Video", "Scanlines", true);
+    config_video.scanlines_filter = read_bool("Video", "ScanlinesFilter", true);
     config_video.scanlines_intensity = read_float("Video", "ScanlinesIntensity", 0.10f);
     config_video.palette = read_int("Video", "Palette", 0);
 
@@ -215,9 +217,9 @@ void config_read(void)
         char pal_label_r[32];
         char pal_label_g[32];
         char pal_label_b[32];
-        sprintf(pal_label_r, "CustomPalette%dR", i);
-        sprintf(pal_label_g, "CustomPalette%dG", i);
-        sprintf(pal_label_b, "CustomPalette%dB", i);
+        snprintf(pal_label_r, sizeof(pal_label_r), "CustomPalette%dR", i);
+        snprintf(pal_label_g, sizeof(pal_label_g), "CustomPalette%dG", i);
+        snprintf(pal_label_b, sizeof(pal_label_b), "CustomPalette%dB", i);
         config_video.color[i].red = read_int("Video", pal_label_r, config_video.color[i].red);
         config_video.color[i].green = read_int("Video", pal_label_g, config_video.color[i].green);
         config_video.color[i].blue = read_int("Video", pal_label_b, config_video.color[i].blue);
@@ -316,12 +318,15 @@ void config_read(void)
     config_input[1].gamepad_asterisk = read_int("InputB", "GamepadAsterisk", SDL_CONTROLLER_BUTTON_START);
     config_input[1].gamepad_hash = read_int("InputB", "GamepadHash", SDL_CONTROLLER_BUTTON_BACK);
 
-    Log("Settings loaded");
+    Debug("Settings loaded");
 }
 
 void config_write(void)
 {
     Log("Saving settings to %s", config_emu_file_path);
+
+    if (config_emulator.ffwd)
+        config_audio.sync = true;
 
     write_bool("Debug", "Debug", config_debug.debug);
     write_bool("Debug", "Disassembler", config_debug.show_disassembler);
@@ -367,6 +372,7 @@ void config_write(void)
     write_bool("Video", "MixFrames", config_video.mix_frames);
     write_float("Video", "MixFramesIntensity", config_video.mix_frames_intensity);
     write_bool("Video", "Scanlines", config_video.scanlines);
+    write_bool("Video", "ScanlinesFilter", config_video.scanlines_filter);
     write_float("Video", "ScanlinesIntensity", config_video.scanlines_intensity);
     write_int("Video", "Palette", config_video.palette);
     for (int i = 0; i < 16; i++)
@@ -374,9 +380,9 @@ void config_write(void)
         char pal_label_r[32];
         char pal_label_g[32];
         char pal_label_b[32];
-        sprintf(pal_label_r, "CustomPalette%dR", i);
-        sprintf(pal_label_g, "CustomPalette%dG", i);
-        sprintf(pal_label_b, "CustomPalette%dB", i);
+        snprintf(pal_label_r, sizeof(pal_label_r), "CustomPalette%dR", i);
+        snprintf(pal_label_g, sizeof(pal_label_g), "CustomPalette%dG", i);
+        snprintf(pal_label_b, sizeof(pal_label_b), "CustomPalette%dB", i);
         write_int("Video", pal_label_r, config_video.color[i].red);
         write_int("Video", pal_label_g, config_video.color[i].green);
         write_int("Video", pal_label_b, config_video.color[i].blue);
@@ -476,7 +482,7 @@ void config_write(void)
 
     if (config_ini_file->write(config_ini_data, true))
     {
-        Log("Settings saved");
+        Debug("Settings saved");
     }
 }
 
@@ -512,7 +518,7 @@ static int read_int(const char* group, const char* key, int default_value)
     else
         ret = std::stoi(value);
 
-    Log("Load setting: [%s][%s]=%d", group, key, ret);
+    Debug("Load setting: [%s][%s]=%d", group, key, ret);
     return ret;
 }
 
@@ -520,7 +526,7 @@ static void write_int(const char* group, const char* key, int integer)
 {
     std::string value = std::to_string(integer);
     config_ini_data[group][key] = value;
-    Log("Save setting: [%s][%s]=%s", group, key, value.c_str());
+    Debug("Save setting: [%s][%s]=%s", group, key, value.c_str());
 }
 
 static float read_float(const char* group, const char* key, float default_value)
@@ -534,15 +540,18 @@ static float read_float(const char* group, const char* key, float default_value)
     else
         ret = strtof(value.c_str(), NULL);
 
-    Log("Load setting: [%s][%s]=%.2f", group, key, ret);
+    Debug("Load setting: [%s][%s]=%.2f", group, key, ret);
     return ret;
 }
 
 static void write_float(const char* group, const char* key, float value)
 {
-    std::string value_str = std::to_string(value);
-    config_ini_data[group][key] = value_str;
-    Log("Save setting: [%s][%s]=%s", group, key, value_str.c_str());
+    std::ostringstream oss;
+    oss.imbue(std::locale::classic());
+    oss << std::fixed << std::setprecision(2) << value;
+    std::string value_str = oss.str();
+    config_ini_data[group][key] = oss.str();
+    Debug("Save float setting: [%s][%s]=%s", group, key, value_str.c_str());
 }
 
 static bool read_bool(const char* group, const char* key, bool default_value)
@@ -556,7 +565,7 @@ static bool read_bool(const char* group, const char* key, bool default_value)
     else
         std::istringstream(value) >> std::boolalpha >> ret;
 
-    Log("Load setting: [%s][%s]=%s", group, key, ret ? "true" : "false");
+    Debug("Load setting: [%s][%s]=%s", group, key, ret ? "true" : "false");
     return ret;
 }
 
@@ -567,18 +576,18 @@ static void write_bool(const char* group, const char* key, bool boolean)
     std::string value;
     value = converter.str();
     config_ini_data[group][key] = value;
-    Log("Save setting: [%s][%s]=%s", group, key, value.c_str());
+    Debug("Save setting: [%s][%s]=%s", group, key, value.c_str());
 }
 
 static std::string read_string(const char* group, const char* key)
 {
     std::string ret = config_ini_data[group][key];
-    Log("Load setting: [%s][%s]=%s", group, key, ret.c_str());
+    Debug("Load setting: [%s][%s]=%s", group, key, ret.c_str());
     return ret;
 }
 
 static void write_string(const char* group, const char* key, std::string value)
 {
     config_ini_data[group][key] = value;
-    Log("Save setting: [%s][%s]=%s", group, key, value.c_str());
+    Debug("Save setting: [%s][%s]=%s", group, key, value.c_str());
 }

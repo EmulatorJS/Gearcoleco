@@ -54,7 +54,7 @@ GearcolecoCore::~GearcolecoCore()
 
 void GearcolecoCore::Init(GC_Color_Format pixelFormat)
 {
-    Log("--== %s %s by Ignacio Sanchez ==--", GEARCOLECO_TITLE, GEARCOLECO_VERSION);
+    Log("Loading %s core %s by Ignacio Sanchez", GEARCOLECO_TITLE, GEARCOLECO_VERSION);
 
     m_pixelFormat = pixelFormat;
 
@@ -78,6 +78,12 @@ void GearcolecoCore::Init(GC_Color_Format pixelFormat)
 
 bool GearcolecoCore::RunToVBlank(u8* pFrameBuffer, s16* pSampleBuffer, int* pSampleCount, bool step, bool stopOnBreakpoints)
 {
+    if (!m_pMemory->IsBiosLoaded())
+    {
+        RenderFrameBuffer(pFrameBuffer);
+        return false;
+    }
+
     bool breakpoint = false;
 
     if (!m_bPaused && m_pCartridge->IsReady())
@@ -194,7 +200,7 @@ void GearcolecoCore::SaveDisassembledROM()
             myfile.close();
         }
 
-        Log("Disassembled ROM Saved");
+        Debug("Disassembled ROM Saved");
     }
 }
 
@@ -204,7 +210,7 @@ bool GearcolecoCore::GetRuntimeInfo(GC_RuntimeInfo& runtime_info)
     runtime_info.screen_height = GC_RESOLUTION_HEIGHT;
     runtime_info.region = Region_NTSC;
 
-    if (m_pCartridge->IsReady())
+    if (m_pCartridge->IsReady() && m_pMemory->IsBiosLoaded())
     {
         if (m_pVideo->GetOverscan() == Video::OverscanFull284)
             runtime_info.screen_width = GC_RESOLUTION_WIDTH + GC_RESOLUTION_SMS_OVERSCAN_H_284_L + GC_RESOLUTION_SMS_OVERSCAN_H_284_R;
@@ -335,7 +341,7 @@ void GearcolecoCore::SaveState(int index)
 
     SaveState(NULL, index);
 
-    Log("Save state %d created", index);
+    Debug("Save state %d created", index);
 }
 
 void GearcolecoCore::SaveState(const char* szPath, int index)
@@ -384,7 +390,7 @@ void GearcolecoCore::SaveState(const char* szPath, int index)
 
     file.close();
 
-    Log("Save state created");
+    Debug("Save state created");
 }
 
 bool GearcolecoCore::SaveState(u8* buffer, size_t& size)
@@ -419,7 +425,7 @@ bool GearcolecoCore::SaveState(std::ostream& stream, size_t& size)
 {
     if (m_pCartridge->IsReady())
     {
-        Log("Gathering save state data...");
+        Debug("Gathering save state data...");
 
         m_pMemory->SaveState(stream);
         m_pProcessor->SaveState(stream);
@@ -436,7 +442,7 @@ bool GearcolecoCore::SaveState(std::ostream& stream, size_t& size)
         stream.write(reinterpret_cast<const char*> (&header_magic), sizeof(header_magic));
         stream.write(reinterpret_cast<const char*> (&header_size), sizeof(header_size));
 
-        Log("Save state size: %d", static_cast<size_t>(stream.tellp()));
+        Debug("Save state size: %d", static_cast<size_t>(stream.tellp()));
 
         return true;
     }
@@ -452,7 +458,7 @@ void GearcolecoCore::LoadState(int index)
 
     LoadState(NULL, index);
 
-    Log("State %d file loaded", index);
+    Debug("State %d file loaded", index);
 }
 
 void GearcolecoCore::LoadState(const char* szPath, int index)
@@ -499,7 +505,7 @@ void GearcolecoCore::LoadState(const char* szPath, int index)
     {
         if (LoadState(file))
         {
-            Log("Save state loaded");
+            Debug("Save state loaded");
         }
     }
     else
@@ -514,7 +520,7 @@ bool GearcolecoCore::LoadState(const u8* buffer, size_t size)
 {
     if (m_pCartridge->IsReady() && (size > 0) && IsValidPointer(buffer))
     {
-        Log("Gathering load state data [%d bytes]...", size);
+        Debug("Gathering load state data [%d bytes]...", size);
 
         using namespace std;
 
@@ -543,15 +549,15 @@ bool GearcolecoCore::LoadState(std::istream& stream)
         size_t size = static_cast<size_t>(stream.tellg());
         stream.seekg(0, ios::beg);
 
-        Log("Load state stream size: %d", size);
+        Debug("Load state stream size: %d", size);
 
         stream.seekg(size - (2 * sizeof(u32)), ios::beg);
         stream.read(reinterpret_cast<char*> (&header_magic), sizeof(header_magic));
         stream.read(reinterpret_cast<char*> (&header_size), sizeof(header_size));
         stream.seekg(0, ios::beg);
 
-        Log("Load state magic: 0x%08x", header_magic);
-        Log("Load state size: %d", header_size);
+        Debug("Load state magic: 0x%08x", header_magic);
+        Debug("Load state size: %d", header_size);
 
         if ((header_size == size) && (header_magic == GC_SAVESTATE_MAGIC))
         {
@@ -591,7 +597,7 @@ void GearcolecoCore::Reset()
 
 void GearcolecoCore::RenderFrameBuffer(u8* finalFrameBuffer)
 {
-    int size = GC_RESOLUTION_WIDTH_WITH_OVERSCAN * GC_RESOLUTION_HEIGHT_WITH_OVERSCAN;
+    int size = m_pMemory->IsBiosLoaded() ? GC_RESOLUTION_WIDTH_WITH_OVERSCAN * GC_RESOLUTION_HEIGHT_WITH_OVERSCAN : GC_RESOLUTION_WIDTH * GC_RESOLUTION_HEIGHT;
     u16* srcBuffer = (m_pMemory->IsBiosLoaded() ? m_pVideo->GetFrameBuffer() : kNoBiosImage);
 
     switch (m_pixelFormat)

@@ -1,6 +1,6 @@
 /*
- * Geargrafx - PC Engine / TurboGrafx Emulator
- * Copyright (C) 2024  Ignacio Sanchez
+ * Gearcoleco - ColecoVision Emulator
+ * Copyright (C) 2021  Ignacio Sanchez
 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,9 +26,9 @@ static void sdl_error(const char* str)
 {
     const char* sdl_str = SDL_GetError();
     if (sdl_str && *sdl_str)
-        str = sdl_str;
-
-    Log("Sound Queue: %s", str);
+        Log("Sound Queue: %s - SDL Error: %s", str, sdl_str);
+    else
+        Log("Sound Queue: %s", str);
 }
 
 SoundQueue::SoundQueue()

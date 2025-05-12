@@ -298,17 +298,17 @@ void Processor::InvalidOPCode()
     {
         case 0xCB:
         {
-            Log("--> ** INVALID CB OP Code (%X) at $%.4X -- %s", opcode, opcode_address, kOPCodeCBNames[opcode]);
+            Debug("--> ** INVALID CB OP Code (%X) at $%.4X -- %s", opcode, opcode_address, kOPCodeCBNames[opcode]);
             break;
         }
         case 0xED:
         {
-            Log("--> ** INVALID ED OP Code (%X) at $%.4X -- %s", opcode, opcode_address, kOPCodeEDNames[opcode]);
+            Debug("--> ** INVALID ED OP Code (%X) at $%.4X -- %s", opcode, opcode_address, kOPCodeEDNames[opcode]);
             break;
         }
         default:
         {
-            Log("--> ** INVALID OP Code (%X) at $%.4X -- %s", opcode, opcode_address, kOPCodeNames[opcode]);
+            Debug("--> ** INVALID OP Code (%X) at $%.4X -- %s", opcode, opcode_address, kOPCodeNames[opcode]);
         }
     }
 #endif
@@ -320,7 +320,7 @@ void Processor::UndocumentedOPCode()
     u16 opcode_address = PC.GetValue() - 1;
     u8 opcode = m_pMemory->Read(opcode_address);
 
-    Log("--> ** UNDOCUMENTED OP Code (%X) at $%.4X -- %s", opcode, opcode_address, kOPCodeNames[opcode]);
+    Debug("--> ** UNDOCUMENTED OP Code (%X) at $%.4X -- %s", opcode, opcode_address, kOPCodeNames[opcode]);
 #endif
 }
 
@@ -423,7 +423,7 @@ bool Processor::Disassemble(u16 address)
             if (i < record->size)
             {
                 char value[8];
-                sprintf(value, "%02X", bytes[i]);
+                snprintf(value, sizeof(value), "%02X", bytes[i]);
                 strcat(record->bytes, value);
                 strcat(record->bytes, " ");
             }
@@ -444,26 +444,26 @@ bool Processor::Disassemble(u16 address)
                 strcpy(record->name, info.name);
                 break;
             case 1:
-                sprintf(record->name, info.name, bytes[first]);
+                snprintf(record->name, sizeof(record->name), info.name, bytes[first]);
                 break;
             case 2:
-                sprintf(record->name, info.name, bytes[first + 1]);
+                snprintf(record->name, sizeof(record->name), info.name, bytes[first + 1]);
                 break;
             case 3:
                 record->jump = true;
                 record->jump_address = (bytes[first + 2] << 8) | bytes[first + 1];
-                sprintf(record->name, info.name, record->jump_address);
+                snprintf(record->name, sizeof(record->name), info.name, record->jump_address);
                 break;
             case 4:
-                sprintf(record->name, info.name, (s8)bytes[first + 1]);
+                snprintf(record->name, sizeof(record->name), info.name, (s8)bytes[first + 1]);
                 break;
             case 5:
                 record->jump = true;
                 record->jump_address = address + info.size + (s8)bytes[first + 1];
-                sprintf(record->name, info.name, record->jump_address, (s8)bytes[first + 1]);
+                snprintf(record->name, sizeof(record->name), info.name, record->jump_address, (s8)bytes[first + 1]);
                 break;
             case 6:
-                sprintf(record->name, info.name, (s8)bytes[first + 1], bytes[first + 2]);
+                snprintf(record->name, sizeof(record->name), info.name, (s8)bytes[first + 1], bytes[first + 2]);
                 break;
             default:
                 strcpy(record->name, "PARSE ERROR");
