@@ -163,11 +163,13 @@ void config_read(void)
     config_debug.font_size = read_int("Debug", "FontSize", 0);
     config_debug.multi_viewport = read_bool("Debug", "MultiViewport", false);
 
+    config_emulator.maximized = read_bool("Emulator", "Maximized", false);
     config_emulator.fullscreen = read_bool("Emulator", "FullScreen", false);
-    config_emulator.show_menu = read_bool("Emulator", "ShowMenu", true);
+    config_emulator.always_show_menu = read_bool("Emulator", "AlwaysShowMenu", false);
     config_emulator.ffwd_speed = read_int("Emulator", "FFWD", 1);
     config_emulator.save_slot = read_int("Emulator", "SaveSlot", 0);
     config_emulator.start_paused = read_bool("Emulator", "StartPaused", false);
+    config_emulator.pause_when_inactive = read_bool("Emulator", "PauseWhenInactive", true);
     config_emulator.region = read_int("Emulator", "Region", 0);
     config_emulator.bios_path = read_string("Emulator", "BiosPath");
     config_emulator.savefiles_dir_option = read_int("Emulator", "SaveFilesDirOption", 0);
@@ -338,11 +340,13 @@ void config_write(void)
     write_int("Debug", "FontSize", config_debug.font_size);
     write_bool("Debug", "MultiViewport", config_debug.multi_viewport);
 
+    write_bool("Emulator", "Maximized", config_emulator.maximized);
     write_bool("Emulator", "FullScreen", config_emulator.fullscreen);
-    write_bool("Emulator", "ShowMenu", config_emulator.show_menu);
+    write_bool("Emulator", "AlwaysShowMenu", config_emulator.always_show_menu);
     write_int("Emulator", "FFWD", config_emulator.ffwd_speed);
     write_int("Emulator", "SaveSlot", config_emulator.save_slot);
     write_bool("Emulator", "StartPaused", config_emulator.start_paused);
+    write_bool("Emulator", "PauseWhenInactive", config_emulator.pause_when_inactive);
     write_int("Emulator", "Region", config_emulator.region);
     write_string("Emulator", "BiosPath", config_emulator.bios_path);
     write_int("Emulator", "SaveFilesDirOption", config_emulator.savefiles_dir_option);

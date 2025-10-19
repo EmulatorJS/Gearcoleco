@@ -75,6 +75,10 @@
 #define IS_LITTLE_ENDIAN
 #endif
 
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#define CLAMP(value, min, max) MIN(MAX(value, min), max)
+
 typedef uint8_t u8;
 typedef int8_t s8;
 typedef uint16_t u16;
@@ -98,6 +102,8 @@ typedef void (*RamChangedCallback) (void);
 
 #define GC_RESOLUTION_WIDTH 256
 #define GC_RESOLUTION_HEIGHT 192
+
+#define GC_MAX_GAMEPADS 2
 
 #define GC_RESOLUTION_WIDTH_WITH_OVERSCAN 320
 #define GC_RESOLUTION_HEIGHT_WITH_OVERSCAN 288

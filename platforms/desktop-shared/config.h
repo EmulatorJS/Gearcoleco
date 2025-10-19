@@ -36,11 +36,13 @@ static const int config_max_recent_roms = 10;
 
 struct config_Emulator
 {
+    bool maximized = false;
     bool fullscreen = false;
-    bool show_menu = true;
+    bool always_show_menu = false;
     bool paused = false;
     int save_slot = 0;
     bool start_paused = false;
+    bool pause_when_inactive = true;
     bool ffwd = false;
     int ffwd_speed = 1;
     int region = 0;
@@ -77,8 +79,8 @@ struct config_Video
     bool sync = true;
     int palette = 0;
     GC_Color color[16] = {
-        {0, 0, 0}, {0, 0, 0}, {33, 200, 66}, {94, 20, 120},
-        {84, 85, 237}, {112, 118, 252}, {212, 82, 77}, {66, 235, 245},
+        {255, 0, 255}, {0, 0, 0}, {33, 200, 66}, {94, 220, 120},
+        {84, 85, 237}, {125, 118, 252}, {212, 82, 77}, {66, 235, 245},
         {252, 85, 84}, {255, 121, 120}, {212, 193, 84}, {230, 206, 128},
         {33, 176, 59}, {201, 91, 186}, {204, 204, 204}, {255, 255, 255}
     };
