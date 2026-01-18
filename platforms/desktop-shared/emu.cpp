@@ -83,6 +83,7 @@ bool emu_init(void)
     emu_audio_sync = true;
     emu_debug_disable_breakpoints_cpu = false;
     emu_debug_disable_breakpoints_mem = false;
+    emu_debug_step_frames_pending = 0;
     emu_debug_tile_palette = 0;
     emu_debug_tile_color_mode = true;
     emu_savefiles_dir_option = 0;
@@ -126,7 +127,18 @@ void emu_update(void)
                 debugging = true;
             }
 
-            debug_next_frame = false;
+            if (debug_next_frame && emu_debug_step_frames_pending > 0)
+            {
+                emu_debug_step_frames_pending--;
+                if (emu_debug_step_frames_pending > 0)
+                    debug_next_frame = true;
+                else
+                    debug_next_frame = false;
+            }
+            else
+            {
+                debug_next_frame = false;
+            }
             debug_step = false;
         }
 
@@ -328,6 +340,7 @@ void emu_debug_next_frame(void)
 {
     debugging = debug_next_frame = true;
     debug_step = false;
+    emu_debug_step_frames_pending++;
     gearcoleco->Pause(false);
 }
 
@@ -375,6 +388,42 @@ void emu_save_screenshot(const char* file_path)
     stbi_write_png(file_path, runtime.screen_width, runtime.screen_height, 3, emu_frame_buffer, runtime.screen_width * 3);
 
     Debug("Screenshot saved!");
+}
+
+void emu_start_vgm_recording(const char* file_path)
+{
+    if (!gearcoleco->GetCartridge()->IsReady())
+        return;
+
+    if (gearcoleco->GetAudio()->IsVgmRecording())
+    {
+        emu_stop_vgm_recording();
+    }
+
+    GC_RuntimeInfo runtime;
+    gearcoleco->GetRuntimeInfo(runtime);
+
+    bool is_pal = (runtime.region == Region_PAL);
+    int clock_rate = is_pal ? GC_MASTER_CLOCK_PAL : GC_MASTER_CLOCK_NTSC;
+
+    if (gearcoleco->GetAudio()->StartVgmRecording(file_path, clock_rate, is_pal))
+    {
+        Log("VGM recording started: %s", file_path);
+    }
+}
+
+void emu_stop_vgm_recording()
+{
+    if (gearcoleco->GetAudio()->IsVgmRecording())
+    {
+        gearcoleco->GetAudio()->StopVgmRecording();
+        Log("VGM recording stopped");
+    }
+}
+
+bool emu_is_vgm_recording()
+{
+    return gearcoleco->GetAudio()->IsVgmRecording();
 }
 
 static void save_ram(void)

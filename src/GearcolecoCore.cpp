@@ -27,6 +27,7 @@
 #include "Cartridge.h"
 #include "ColecoVisionIOPorts.h"
 #include "no_bios.h"
+#include "common.h"
 
 GearcolecoCore::GearcolecoCore()
 {
@@ -99,6 +100,7 @@ bool GearcolecoCore::RunToVBlank(u8* pFrameBuffer, s16* pSampleBuffer, int* pSam
 #endif
             vblank = m_pVideo->Tick(clockCycles);
             m_pAudio->Tick(clockCycles);
+            m_pMemory->Tick(clockCycles);
 
             totalClocks += clockCycles;
 
@@ -129,6 +131,7 @@ bool GearcolecoCore::LoadROM(const char* szFilePath, Cartridge::ForceConfigurati
         if (IsValidPointer(config))
             m_pCartridge->ForceConfig(*config);
 
+        m_pMemory->SetupMapper();
         Reset();
 
         m_pMemory->ResetRomDisassembledMemory();
@@ -147,6 +150,7 @@ bool GearcolecoCore::LoadROMFromBuffer(const u8* buffer, int size, Cartridge::Fo
         if (IsValidPointer(config))
             m_pCartridge->ForceConfig(*config);
 
+        m_pMemory->SetupMapper();
         Reset();
 
         m_pMemory->ResetRomDisassembledMemory();
@@ -174,7 +178,8 @@ void GearcolecoCore::SaveDisassembledROM()
 
         Log("Saving Disassembled ROM %s...", path);
 
-        ofstream myfile(path, ios::out | ios::trunc);
+        ofstream myfile;
+        open_ofstream_utf8(myfile, path, ios::out | ios::trunc);
 
         if (myfile.is_open())
         {
@@ -382,7 +387,8 @@ void GearcolecoCore::SaveState(const char* szPath, int index)
 
     Log("Save state file: %s", sstm.str().c_str());
 
-    ofstream file(sstm.str().c_str(), ios::out | ios::binary);
+    ofstream file;
+    open_ofstream_utf8(file, sstm.str().c_str(), ios::out | ios::binary);
 
     SaveState(file, size);
 
@@ -499,7 +505,7 @@ void GearcolecoCore::LoadState(const char* szPath, int index)
 
     ifstream file;
 
-    file.open(sstm.str().c_str(), ios::in | ios::binary);
+    open_ifstream_utf8(file, sstm.str().c_str(), ios::in | ios::binary);
 
     if (!file.fail())
     {

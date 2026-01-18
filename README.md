@@ -31,32 +31,32 @@ Don't hesitate to report bugs or ask for new features by [opening an issue](http
     <tr>
       <td rowspan="2"><strong>Windows</strong></td>
       <td>x64</td>
-      <td><a href="https://github.com/drhelius/Gearcoleco/releases/download/1.5.3/Gearcoleco-1.5.3-windows-x64.zip">Gearcoleco-1.5.3-windows-x64.zip</a></td>
+      <td><a href="https://github.com/drhelius/Gearcoleco/releases/download/1.5.5/Gearcoleco-1.5.5-windows-x64.zip">Gearcoleco-1.5.5-windows-x64.zip</a></td>
       <td rowspan="2">May need <a href="https://go.microsoft.com/fwlink/?LinkId=746572">Visual C++ Redistributable</a> and <a href="https://apps.microsoft.com/detail/9nqpsl29bfff">OpenGL Compatibility Pack</a></td>
     </tr>
     <tr>
       <td>ARM64</td>
-      <td><a href="https://github.com/drhelius/Gearcoleco/releases/download/1.5.3/Gearcoleco-1.5.3-windows-arm64.zip">Gearcoleco-1.5.3-windows-arm64.zip</a></td>
+      <td><a href="https://github.com/drhelius/Gearcoleco/releases/download/1.5.5/Gearcoleco-1.5.5-windows-arm64.zip">Gearcoleco-1.5.5-windows-arm64.zip</a></td>
     </tr>
     <tr>
       <td rowspan="2"><strong>macOS</strong></td>
       <td>Apple Silicon</td>
-      <td><a href="https://github.com/drhelius/Gearcoleco/releases/download/1.5.3/Gearcoleco-1.5.3-macos-arm.zip">Gearcoleco-1.5.3-macos-arm.zip</a></td>
+      <td><a href="https://github.com/drhelius/Gearcoleco/releases/download/1.5.5/Gearcoleco-1.5.5-macos-arm.zip">Gearcoleco-1.5.5-macos-arm.zip</a></td>
       <td rowspan="2"></td>
     </tr>
     <tr>
       <td>Intel</td>
-      <td><a href="https://github.com/drhelius/Gearcoleco/releases/download/1.5.3/Gearcoleco-1.5.3-macos-intel.zip">Gearcoleco-1.5.3-macos-intel.zip</a></td>
+      <td><a href="https://github.com/drhelius/Gearcoleco/releases/download/1.5.5/Gearcoleco-1.5.5-macos-intel.zip">Gearcoleco-1.5.5-macos-intel.zip</a></td>
     </tr>
     <tr>
       <td rowspan="2"><strong>Linux</strong></td>
       <td>Ubuntu 24.04</td>
-      <td><a href="https://github.com/drhelius/Gearcoleco/releases/download/1.5.3/Gearcoleco-1.5.3-ubuntu-24.04.zip">Gearcoleco-1.5.3-ubuntu-24.04.zip</a></td>
+      <td><a href="https://github.com/drhelius/Gearcoleco/releases/download/1.5.5/Gearcoleco-1.5.5-ubuntu-24.04.zip">Gearcoleco-1.5.5-ubuntu-24.04.zip</a></td>
       <td rowspan="2">May need <code>libsdl2</code></td>
     </tr>
     <tr>
       <td>Ubuntu 22.04</td>
-      <td><a href="https://github.com/drhelius/Gearcoleco/releases/download/1.5.3/Gearcoleco-1.5.3-ubuntu-22.04.zip">Gearcoleco-1.5.3-ubuntu-22.04.zip</a></td>
+      <td><a href="https://github.com/drhelius/Gearcoleco/releases/download/1.5.5/Gearcoleco-1.5.5-ubuntu-22.04.zip">Gearcoleco-1.5.5-ubuntu-22.04.zip</a></td>
     </tr>
     <tr>
       <td><strong>RetroArch</strong></td>
@@ -81,6 +81,7 @@ Don't hesitate to report bugs or ask for new features by [opening an issue](http
 - Support for Super Action Controller (SAC), Wheel Controller and Roller Controller.
 - Save states.
 - Compressed rom support (ZIP).
+- VGM recorder.
 - Supported platforms (standalone): Windows, Linux, BSD and macOS.
 - Supported platforms (libretro): Windows, Linux, macOS, Raspberry Pi, Android, iOS, tvOS, PlayStation Vita, PlayStation 3, Nintendo 3DS, Nintendo GameCube, Nintendo Wii, Nintendo WiiU, Nintendo Switch, Emscripten, Classic Mini systems (NES, SNES, C64, ...), OpenDingux, RetroFW and QNX.
 - Full debugger with just-in-time disassembler, CPU breakpoints, memory access breakpoints, code navigation (goto address, JP JR and CALL double clicking), debug symbols, memory editor, IO inspector and VRAM viewer including registries, tiles, sprites and backgrounds.

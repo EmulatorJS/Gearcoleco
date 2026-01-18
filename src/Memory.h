@@ -25,6 +25,7 @@
 
 class Processor;
 class Cartridge;
+class Mapper;
 
 class Memory
 {
@@ -57,6 +58,7 @@ public:
     void SetProcessor(Processor* pProcessor);
     void Init();
     void Reset();
+    void SetupMapper();
     u8 Read(u16 address);
     void Write(u16 address, u8 value);
     u8* GetRam();
@@ -80,6 +82,8 @@ public:
     void SetRunToBreakpoint(stDisassembleRecord* pBreakpoint);
     void EnableSGMUpper(bool enable);
     void EnableSGMLower(bool enable);
+    void Tick(unsigned int cycles) { m_iTotalCycles += cycles; }
+    u64 GetTotalCycles() const { return m_iTotalCycles; }
 
 private:
     void CheckBreakpoints(u16 address, bool write);
@@ -87,6 +91,7 @@ private:
 private:
     Processor* m_pProcessor;
     Cartridge* m_pCartridge;
+    Mapper* m_pMapper;
     stDisassembleRecord** m_pDisassembledRomMap;
     stDisassembleRecord** m_pDisassembledRamMap;
     stDisassembleRecord** m_pDisassembledBiosMap;
@@ -100,8 +105,7 @@ private:
     u8* m_pBios;
     u8* m_pRam;
     u8* m_pSGMRam;
-    u32 m_RomBankAddress;
-    u8 m_RomBank;
+    u64 m_iTotalCycles;
 };
 
 #include "Memory_inline.h"

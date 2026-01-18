@@ -77,6 +77,8 @@ struct config_Video
     bool scanlines_filter = true;
     float scanlines_intensity = 0.10f;
     bool sync = true;
+    float background_color[3] = {0.1f, 0.1f, 0.1f};
+    float background_color_debugger[3] = {0.2f, 0.2f, 0.2f};
     int palette = 0;
     GC_Color color[16] = {
         {255, 0, 255}, {0, 0, 0}, {33, 200, 66}, {94, 220, 120},
@@ -138,6 +140,45 @@ struct config_Input
     int gamepad_hash;
 };
 
+enum config_HotkeyIndex
+{
+    config_HotkeyIndex_OpenROM = 0,
+    config_HotkeyIndex_Quit,
+    config_HotkeyIndex_Reset,
+    config_HotkeyIndex_Pause,
+    config_HotkeyIndex_FFWD,
+    config_HotkeyIndex_SaveState,
+    config_HotkeyIndex_LoadState,
+    config_HotkeyIndex_Screenshot,
+    config_HotkeyIndex_Fullscreen,
+    config_HotkeyIndex_CaptureMouse,
+    config_HotkeyIndex_ShowMainMenu,
+    config_HotkeyIndex_DebugStep,
+    config_HotkeyIndex_DebugContinue,
+    config_HotkeyIndex_DebugNextFrame,
+    config_HotkeyIndex_DebugRunToCursor,
+    config_HotkeyIndex_DebugBreakpoint,
+    config_HotkeyIndex_DebugGoBack,
+    config_HotkeyIndex_SelectSlot1,
+    config_HotkeyIndex_SelectSlot2,
+    config_HotkeyIndex_SelectSlot3,
+    config_HotkeyIndex_SelectSlot4,
+    config_HotkeyIndex_SelectSlot5,
+    config_HotkeyIndex_COUNT
+};
+
+struct config_Input_Gamepad_Shortcuts
+{
+    int gamepad_shortcuts[config_HotkeyIndex_COUNT];
+};
+
+struct config_Hotkey
+{
+    SDL_Scancode key;
+    SDL_Keymod mod;
+    char str[64];
+};
+
 struct config_Debug
 {
     bool debug = false;
@@ -160,12 +201,15 @@ EXTERN config_Emulator config_emulator;
 EXTERN config_Video config_video;
 EXTERN config_Audio config_audio;
 EXTERN config_Input config_input[2];
+EXTERN config_Input_Gamepad_Shortcuts config_input_gamepad_shortcuts[2];
+EXTERN config_Hotkey config_hotkeys[config_HotkeyIndex_COUNT];
 EXTERN config_Debug config_debug;
 
 EXTERN void config_init(void);
 EXTERN void config_destroy(void);
 EXTERN void config_read(void);
 EXTERN void config_write(void);
+EXTERN void config_update_hotkey_string(config_Hotkey* hotkey);
 
 #undef CONFIG_IMPORT
 #undef EXTERN

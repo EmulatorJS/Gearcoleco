@@ -41,6 +41,7 @@ static int main_menu_height;
 static bool dialog_in_use = false;
 static SDL_Scancode* configured_key;
 static int* configured_button;
+static config_Hotkey* configured_hotkey;
 static ImVec4 custom_palette[16];
 static bool shortcut_open_rom = false;
 static ImFont* default_font[4];
@@ -65,12 +66,16 @@ static void file_dialog_choose_savestate_path(void);
 static void file_dialog_load_bios(void);
 static void file_dialog_load_symbols(void);
 static void file_dialog_save_screenshot(void);
+static void file_dialog_save_vgm(void);
 static void file_dialog_set_native_window(SDL_Window* window, nfdwindowhandle_t* native_window);
 static void keyboard_configuration_item(const char* text, SDL_Scancode* key, int player);
 static void gamepad_configuration_item(const char* text, int* button, int player);
+static void hotkey_configuration_item(const char* text, config_Hotkey* hotkey);
 static void gamepad_device_selector(int player);
 static void popup_modal_keyboard();
 static void popup_modal_gamepad(int pad);
+static void popup_modal_hotkey();
+static void check_hotkey_duplicates(config_Hotkey* current_hotkey);
 static void popup_modal_about(void);
 static void popup_modal_bios(void);
 static GC_Color color_float_to_int(ImVec4 color);
@@ -127,6 +132,8 @@ bool gui_init(void)
     set_style();
 
     emu_audio_mute(!config_audio.enable);
+
+    gui_configured_hotkey = configured_hotkey;
 
     strcpy(bios_path, config_emulator.bios_path.c_str());
     strcpy(savefiles_path, config_emulator.savefiles_path.c_str());
@@ -311,6 +318,7 @@ static void main_menu(void)
     bool open_about = false;
     bool open_symbols = false;
     bool save_screenshot = false;
+    bool save_vgm = false;
     bool choose_savestates_path = false;
     bool open_bios = false;
     bool open_bios_warning = false;
@@ -328,7 +336,7 @@ static void main_menu(void)
         {
             gui_in_use = true;
 
-            if (ImGui::MenuItem("Open ROM...", "Ctrl+O"))
+            if (ImGui::MenuItem("Open ROM...", config_hotkeys[config_HotkeyIndex_OpenROM].str))
             {
                 if (emu_is_bios_loaded())
                     open_rom = true;
@@ -361,19 +369,19 @@ static void main_menu(void)
 
             ImGui::Separator();
             
-            if (ImGui::MenuItem("Reset", "Ctrl+R"))
+            if (ImGui::MenuItem("Reset", config_hotkeys[config_HotkeyIndex_Reset].str))
             {
                 menu_reset();
             }
 
-            if (ImGui::MenuItem("Pause", "Ctrl+P", &config_emulator.paused))
+            if (ImGui::MenuItem("Pause", config_hotkeys[config_HotkeyIndex_Pause].str, &config_emulator.paused))
             {
                 menu_pause();
             }
 
             ImGui::Separator();
 
-            if (ImGui::MenuItem("Fast Forward", "Ctrl+F", &config_emulator.ffwd))
+            if (ImGui::MenuItem("Fast Forward", config_hotkeys[config_HotkeyIndex_FFWD].str, &config_emulator.ffwd))
             {
                 menu_ffwd();
             }
@@ -408,7 +416,7 @@ static void main_menu(void)
                 ImGui::EndMenu();
             }
 
-            if (ImGui::MenuItem("Save State", "Ctrl+S")) 
+            if (ImGui::MenuItem("Save State", config_hotkeys[config_HotkeyIndex_SaveState].str)) 
             {
                 std::string message("Saving state to slot ");
                 message += std::to_string(config_emulator.save_slot + 1);
@@ -416,7 +424,7 @@ static void main_menu(void)
                 emu_save_state_slot(config_emulator.save_slot + 1);
             }
 
-            if (ImGui::MenuItem("Load State", "Ctrl+L"))
+            if (ImGui::MenuItem("Load State", config_hotkeys[config_HotkeyIndex_LoadState].str))
             {
                 std::string message("Loading state from slot ");
                 message += std::to_string(config_emulator.save_slot + 1);
@@ -431,14 +439,14 @@ static void main_menu(void)
                 save_screenshot = true;
             }
 
-            if (ImGui::MenuItem("Save Screenshot", "Ctrl+X"))
+            if (ImGui::MenuItem("Save Screenshot", config_hotkeys[config_HotkeyIndex_Screenshot].str))
             {
                 call_save_screenshot(NULL);
             }
 
             ImGui::Separator();
 
-            if (ImGui::MenuItem("Quit", "Ctrl+Q"))
+            if (ImGui::MenuItem("Quit", config_hotkeys[config_HotkeyIndex_Quit].str))
             {
                 application_trigger_quit();
             }
@@ -523,6 +531,46 @@ static void main_menu(void)
 
             ImGui::MenuItem("Status Messages", "", &config_emulator.status_messages);
 
+            ImGui::Separator();
+
+            if (ImGui::BeginMenu("Hotkeys"))
+            {
+                hotkey_configuration_item("Open ROM:", &config_hotkeys[config_HotkeyIndex_OpenROM]);
+                hotkey_configuration_item("Quit:", &config_hotkeys[config_HotkeyIndex_Quit]);
+                hotkey_configuration_item("Reset:", &config_hotkeys[config_HotkeyIndex_Reset]);
+                hotkey_configuration_item("Pause:", &config_hotkeys[config_HotkeyIndex_Pause]);
+                hotkey_configuration_item("Fast Forward:", &config_hotkeys[config_HotkeyIndex_FFWD]);
+                hotkey_configuration_item("Save State:", &config_hotkeys[config_HotkeyIndex_SaveState]);
+                hotkey_configuration_item("Load State:", &config_hotkeys[config_HotkeyIndex_LoadState]);
+                hotkey_configuration_item("Save State Slot 1:", &config_hotkeys[config_HotkeyIndex_SelectSlot1]);
+                hotkey_configuration_item("Save State Slot 2:", &config_hotkeys[config_HotkeyIndex_SelectSlot2]);
+                hotkey_configuration_item("Save State Slot 3:", &config_hotkeys[config_HotkeyIndex_SelectSlot3]);
+                hotkey_configuration_item("Save State Slot 4:", &config_hotkeys[config_HotkeyIndex_SelectSlot4]);
+                hotkey_configuration_item("Save State Slot 5:", &config_hotkeys[config_HotkeyIndex_SelectSlot5]);
+                hotkey_configuration_item("Screenshot:", &config_hotkeys[config_HotkeyIndex_Screenshot]);
+                hotkey_configuration_item("Fullscreen:", &config_hotkeys[config_HotkeyIndex_Fullscreen]);
+                hotkey_configuration_item("Capture Mouse:", &config_hotkeys[config_HotkeyIndex_CaptureMouse]);
+                hotkey_configuration_item("Show Main Menu:", &config_hotkeys[config_HotkeyIndex_ShowMainMenu]);
+
+                popup_modal_hotkey();
+
+                ImGui::EndMenu();
+            }
+
+            if (ImGui::BeginMenu("Debug Hotkeys"))
+            {
+                hotkey_configuration_item("Step:", &config_hotkeys[config_HotkeyIndex_DebugStep]);
+                hotkey_configuration_item("Continue:", &config_hotkeys[config_HotkeyIndex_DebugContinue]);
+                hotkey_configuration_item("Next Frame:", &config_hotkeys[config_HotkeyIndex_DebugNextFrame]);
+                hotkey_configuration_item("Run to Cursor:", &config_hotkeys[config_HotkeyIndex_DebugRunToCursor]);
+                hotkey_configuration_item("Toggle Breakpoint:", &config_hotkeys[config_HotkeyIndex_DebugBreakpoint]);
+                hotkey_configuration_item("Go Back:", &config_hotkeys[config_HotkeyIndex_DebugGoBack]);
+
+                popup_modal_hotkey();
+
+                ImGui::EndMenu();
+            }
+
             ImGui::EndMenu();
         }
 
@@ -530,12 +578,12 @@ static void main_menu(void)
         {
             gui_in_use = true;
 
-            if (ImGui::MenuItem("Full Screen", "F11", &config_emulator.fullscreen))
+            if (ImGui::MenuItem("Full Screen", config_hotkeys[config_HotkeyIndex_Fullscreen].str, &config_emulator.fullscreen))
             {
                 application_trigger_fullscreen(config_emulator.fullscreen);
             }
 
-            ImGui::MenuItem("Always Show Menu", "CTRL+M", &config_emulator.always_show_menu);
+            ImGui::MenuItem("Always Show Menu", config_hotkeys[config_HotkeyIndex_ShowMainMenu].str, &config_emulator.always_show_menu);
             if (ImGui::IsItemHovered())
             {
                 ImGui::BeginTooltip();
@@ -643,6 +691,27 @@ static void main_menu(void)
                         update_palette();
                     }
                 }
+
+                ImGui::EndMenu();
+            }
+
+            ImGui::Separator();
+
+            if (ImGui::BeginMenu("Background Color"))
+            {
+                ImGui::ColorEdit3("##normal_bg", config_video.background_color, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_Float);
+                ImGui::SameLine();
+                ImGui::Text("Normal Background");
+
+                ImGui::Separator();
+
+                if (ImGui::ColorEdit3("##debugger_bg", config_video.background_color_debugger, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_Float))
+                {
+                    ImGuiStyle& style = ImGui::GetStyle();
+                    style.Colors[ImGuiCol_DockingEmptyBg] = ImVec4(config_video.background_color_debugger[0], config_video.background_color_debugger[1], config_video.background_color_debugger[2], 1.0f);
+                }
+                ImGui::SameLine();
+                ImGui::Text("Debugger Background");
 
                 ImGui::EndMenu();
             }
@@ -765,6 +834,31 @@ static void main_menu(void)
                         ImGui::EndMenu();
                     }
 
+                    if (ImGui::BeginMenu("Shortcut Configuration"))
+                    {
+                        ImGui::TextDisabled("Gamepad Player 1 - Shortcuts");
+                        ImGui::Separator();
+
+                        gamepad_configuration_item("Save State:", &config_input_gamepad_shortcuts[0].gamepad_shortcuts[config_HotkeyIndex_SaveState], 0);
+                        gamepad_configuration_item("Load State:", &config_input_gamepad_shortcuts[0].gamepad_shortcuts[config_HotkeyIndex_LoadState], 0);
+                        gamepad_configuration_item("Save State Slot 1:", &config_input_gamepad_shortcuts[0].gamepad_shortcuts[config_HotkeyIndex_SelectSlot1], 0);
+                        gamepad_configuration_item("Save State Slot 2:", &config_input_gamepad_shortcuts[0].gamepad_shortcuts[config_HotkeyIndex_SelectSlot2], 0);
+                        gamepad_configuration_item("Save State Slot 3:", &config_input_gamepad_shortcuts[0].gamepad_shortcuts[config_HotkeyIndex_SelectSlot3], 0);
+                        gamepad_configuration_item("Save State Slot 4:", &config_input_gamepad_shortcuts[0].gamepad_shortcuts[config_HotkeyIndex_SelectSlot4], 0);
+                        gamepad_configuration_item("Save State Slot 5:", &config_input_gamepad_shortcuts[0].gamepad_shortcuts[config_HotkeyIndex_SelectSlot5], 0);
+
+                        ImGui::Separator();
+
+                        gamepad_configuration_item("Reset:", &config_input_gamepad_shortcuts[0].gamepad_shortcuts[config_HotkeyIndex_Reset], 0);
+                        gamepad_configuration_item("Pause:", &config_input_gamepad_shortcuts[0].gamepad_shortcuts[config_HotkeyIndex_Pause], 0);
+                        gamepad_configuration_item("Fast Forward:", &config_input_gamepad_shortcuts[0].gamepad_shortcuts[config_HotkeyIndex_FFWD], 0);
+                        gamepad_configuration_item("Screenshot:", &config_input_gamepad_shortcuts[0].gamepad_shortcuts[config_HotkeyIndex_Screenshot], 0);
+
+                        popup_modal_gamepad(0);
+
+                        ImGui::EndMenu();
+                    }
+
                     ImGui::EndMenu();
                 }
 
@@ -812,6 +906,31 @@ static void main_menu(void)
                         ImGui::EndMenu();
                     }
 
+                    if (ImGui::BeginMenu("Shortcut Configuration"))
+                    {
+                        ImGui::TextDisabled("Gamepad Player 2 - Shortcuts");
+                        ImGui::Separator();
+
+                        gamepad_configuration_item("Save State:", &config_input_gamepad_shortcuts[1].gamepad_shortcuts[config_HotkeyIndex_SaveState], 1);
+                        gamepad_configuration_item("Load State:", &config_input_gamepad_shortcuts[1].gamepad_shortcuts[config_HotkeyIndex_LoadState], 1);
+                        gamepad_configuration_item("Save State Slot 1:", &config_input_gamepad_shortcuts[1].gamepad_shortcuts[config_HotkeyIndex_SelectSlot1], 1);
+                        gamepad_configuration_item("Save State Slot 2:", &config_input_gamepad_shortcuts[1].gamepad_shortcuts[config_HotkeyIndex_SelectSlot2], 1);
+                        gamepad_configuration_item("Save State Slot 3:", &config_input_gamepad_shortcuts[1].gamepad_shortcuts[config_HotkeyIndex_SelectSlot3], 1);
+                        gamepad_configuration_item("Save State Slot 4:", &config_input_gamepad_shortcuts[1].gamepad_shortcuts[config_HotkeyIndex_SelectSlot4], 1);
+                        gamepad_configuration_item("Save State Slot 5:", &config_input_gamepad_shortcuts[1].gamepad_shortcuts[config_HotkeyIndex_SelectSlot5], 1);
+
+                        ImGui::Separator();
+
+                        gamepad_configuration_item("Reset:", &config_input_gamepad_shortcuts[1].gamepad_shortcuts[config_HotkeyIndex_Reset], 1);
+                        gamepad_configuration_item("Pause:", &config_input_gamepad_shortcuts[1].gamepad_shortcuts[config_HotkeyIndex_Pause], 1);
+                        gamepad_configuration_item("Fast Forward:", &config_input_gamepad_shortcuts[1].gamepad_shortcuts[config_HotkeyIndex_FFWD], 1);
+                        gamepad_configuration_item("Screenshot:", &config_input_gamepad_shortcuts[1].gamepad_shortcuts[config_HotkeyIndex_Screenshot], 1);
+
+                        popup_modal_gamepad(1);
+
+                        ImGui::EndMenu();
+                    }
+
                     ImGui::EndMenu();
                 }
 
@@ -820,10 +939,10 @@ static void main_menu(void)
 
             if (ImGui::BeginMenu("Spinners"))
             {
-                ImGui::MenuItem("Capture Mouse", "F12", &config_emulator.capture_mouse);
+                ImGui::MenuItem("Capture Mouse", config_hotkeys[config_HotkeyIndex_CaptureMouse].str, &config_emulator.capture_mouse);
                 if (ImGui::IsItemHovered())
                 {
-                    ImGui::SetTooltip("When enabled, the mouse will be captured inside\nthe emulator window to use spinners freely.\nPress F12 to release the mouse.");
+                    ImGui::SetTooltip("When enabled, the mouse will be captured inside\nthe emulator window to use spinners freely.\nPress %s to release the mouse.", config_hotkeys[config_HotkeyIndex_CaptureMouse].str);
                 }
 
                 ImGui::Combo("##spinner", &config_emulator.spinner, "Disabled\0Super Action Controller\0Steering Wheel\0Roller Controller\0\0", 4);
@@ -858,6 +977,23 @@ static void main_menu(void)
                     SDL_GL_SetSwapInterval(0);
                 }
             }
+
+#ifndef GEARCOLECO_DISABLE_VGMRECORDER
+            ImGui::Separator();
+
+            bool is_recording = emu_is_vgm_recording();
+
+            if (ImGui::MenuItem("Start VGM Recording...", "", false, !is_recording && !emu_is_empty()))
+            {
+                save_vgm = true;
+            }
+
+            if (ImGui::MenuItem("Stop VGM Recording", "", false, is_recording))
+            {
+                emu_stop_vgm_recording();
+                gui_set_status_message("VGM recording stopped", 3000);
+            }
+#endif
 
             ImGui::EndMenu();
         }
@@ -1010,6 +1146,9 @@ static void main_menu(void)
 
     if (save_screenshot)
         file_dialog_save_screenshot();
+
+    if (save_vgm)
+        file_dialog_save_vgm();
 
     if (choose_savestates_path)
         file_dialog_choose_savestate_path();
@@ -1377,6 +1516,30 @@ static void file_dialog_save_screenshot(void)
     }
 }
 
+static void file_dialog_save_vgm(void)
+{
+    nfdchar_t *outPath;
+    nfdfilteritem_t filterItem[1] = { { "VGM Files", "vgm" } };
+    nfdsavedialogu8args_t args = { };
+    args.filterList = filterItem;
+    args.filterCount = 1;
+    args.defaultPath = NULL;
+    args.defaultName = NULL;
+    file_dialog_set_native_window(application_sdl_window, &args.parentWindow);
+
+    nfdresult_t result = NFD_SaveDialogU8_With(&outPath, &args);
+    if (result == NFD_OKAY)
+    {
+        emu_start_vgm_recording(outPath);
+        gui_set_status_message("VGM recording started", 3000);
+        NFD_FreePath(outPath);
+    }
+    else if (result != NFD_CANCEL)
+    {
+        Log("Save VGM Error: %s", NFD_GetError());
+    }
+}
+
 static void file_dialog_set_native_window(SDL_Window* window, nfdwindowhandle_t* native_window)
 {
     if (!NFD_GetNativeWindowFromSDLWindow(window, native_window))
@@ -1413,7 +1576,7 @@ static void keyboard_configuration_item(const char* text, SDL_Scancode* key, int
 static void gamepad_configuration_item(const char* text, int* button, int player)
 {
     ImGui::Text("%s", text);
-    ImGui::SameLine(120);
+    ImGui::SameLine(130);
 
     const char* button_name = "";
 
@@ -1454,6 +1617,33 @@ static void gamepad_configuration_item(const char* text, int* button, int player
     if (ImGui::Button(remove_label))
     {
         *button = SDL_CONTROLLER_BUTTON_INVALID;
+    }
+}
+
+static void hotkey_configuration_item(const char* text, config_Hotkey* hotkey)
+{
+    ImGui::Text("%s", text);
+    ImGui::SameLine(180);
+
+    char button_label[256];
+    snprintf(button_label, sizeof(button_label), "%s##%s", hotkey->str[0] != '\0' ? hotkey->str : "<None>", text);
+
+    if (ImGui::Button(button_label, ImVec2(150,0)))
+    {
+        configured_hotkey = hotkey;
+        ImGui::OpenPopup("Hotkey Configuration");
+    }
+
+    ImGui::SameLine();
+
+    char remove_label[256];
+    snprintf(remove_label, sizeof(remove_label), "X##rh%s", text);
+
+    if (ImGui::Button(remove_label))
+    {
+        hotkey->key = SDL_SCANCODE_UNKNOWN;
+        hotkey->mod = KMOD_NONE;
+        config_update_hotkey_string(hotkey);
     }
 }
 
@@ -1590,6 +1780,73 @@ static void popup_modal_gamepad(int pad)
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();
+    }
+}
+
+static void popup_modal_hotkey()
+{
+    if (ImGui::BeginPopupModal("Hotkey Configuration", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        ImGui::Text("Press any key combination...\n");
+        ImGui::Text("Hold Ctrl, Shift, or Alt before pressing the key\n\n");
+        ImGui::Separator();
+
+        SDL_Keymod mods = SDL_GetModState();
+
+        for (ImGuiKey i = ImGuiKey_NamedKey_BEGIN; i < ImGuiKey_NamedKey_END; i = (ImGuiKey)(i + 1))
+        {
+            // Skip modifier keys
+            if (i == ImGuiKey_LeftCtrl || i == ImGuiKey_RightCtrl ||
+                i == ImGuiKey_LeftShift || i == ImGuiKey_RightShift ||
+                i == ImGuiKey_LeftAlt || i == ImGuiKey_RightAlt ||
+                i == ImGuiKey_LeftSuper || i == ImGuiKey_RightSuper ||
+                i == ImGuiKey_CapsLock)
+                continue;
+
+            if (ImGui::IsKeyPressed(i, false))
+            {
+                SDL_Keycode key_code = ImGuiKeyToSDLKeycode(i);
+                SDL_Scancode key = SDL_GetScancodeFromKey(key_code);
+
+                if (key != SDL_SCANCODE_UNKNOWN)
+                {
+                    configured_hotkey->key = key;
+                    configured_hotkey->mod = mods;
+                    config_update_hotkey_string(configured_hotkey);
+                    check_hotkey_duplicates(configured_hotkey);
+                    ImGui::CloseCurrentPopup();
+                    break;
+                }
+            }
+        }
+
+        if (ImGui::Button("Cancel", ImVec2(120, 0)))
+        {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+}
+
+static void check_hotkey_duplicates(config_Hotkey* current_hotkey)
+{
+    if (current_hotkey->key == SDL_SCANCODE_UNKNOWN)
+        return;
+
+    for (int i = 0; i < config_HotkeyIndex_COUNT; i++)
+    {
+        config_Hotkey* other = &config_hotkeys[i];
+
+        if (other == current_hotkey)
+            continue;
+
+        if (other->key == current_hotkey->key &&
+            other->mod == current_hotkey->mod)
+        {
+            other->key = SDL_SCANCODE_UNKNOWN;
+            other->mod = KMOD_NONE;
+            config_update_hotkey_string(other);
+        }
     }
 }
 
@@ -2015,7 +2272,7 @@ static void set_style(void)
     style.GrabRounding = 2.0f;
     style.TabRounding = 3.5f;
     style.TabBorderSize = 0.0f;
-    style.TabMinWidthForCloseButton = 0.0f;
+    style.TabCloseButtonMinWidthUnselected = 0.0f;
     style.ColorButtonPosition = ImGuiDir_Right;
     style.ButtonTextAlign = ImVec2(0.5f, 0.5f);
     style.SelectableTextAlign = ImVec2(0.0f, 0.0f);
@@ -2075,7 +2332,7 @@ static void set_style(void)
     style.Colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.1450980454683304f, 0.1450980454683304f, 0.1490196138620377f, 0.7f);
 
     style.Colors[ImGuiCol_DockingPreview] = style.Colors[ImGuiCol_HeaderActive] * ImVec4(1.0f, 1.0f, 1.0f, 0.7f);
-    style.Colors[ImGuiCol_DockingEmptyBg] = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);
+    style.Colors[ImGuiCol_DockingEmptyBg] = ImVec4(config_video.background_color_debugger[0], config_video.background_color_debugger[1], config_video.background_color_debugger[2], 1.00f);
     style.Colors[ImGuiCol_TabHovered] = style.Colors[ImGuiCol_HeaderHovered];
     style.Colors[ImGuiCol_TabSelected] = lerp(style.Colors[ImGuiCol_HeaderActive], style.Colors[ImGuiCol_TitleBgActive], 0.60f);
     style.Colors[ImGuiCol_TabSelectedOverline] = style.Colors[ImGuiCol_HeaderActive];

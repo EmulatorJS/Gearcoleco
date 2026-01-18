@@ -36,6 +36,7 @@ EXTERN u8* emu_debug_sprite_buffers[64];
 EXTERN bool emu_audio_sync;
 EXTERN bool emu_debug_disable_breakpoints_cpu;
 EXTERN bool emu_debug_disable_breakpoints_mem;
+EXTERN int emu_debug_step_frames_pending;
 EXTERN int emu_debug_tile_palette;
 EXTERN bool emu_debug_tile_color_mode;
 EXTERN bool emu_savefiles_dir_option;
@@ -80,6 +81,9 @@ EXTERN void emu_load_bios(const char* file_path);
 EXTERN void emu_video_no_sprite_limit(bool enabled);
 EXTERN void emu_set_overscan(int overscan);
 EXTERN void emu_save_screenshot(const char* file_path);
+EXTERN void emu_start_vgm_recording(const char* file_path);
+EXTERN void emu_stop_vgm_recording();
+EXTERN bool emu_is_vgm_recording();
 
 #undef EMU_IMPORT
 #undef EXTERN
